@@ -1,0 +1,29 @@
+{
+  "schema_version": "toolkit-module/v1",
+  "id": "eval",
+  "name": "Eval",
+  "description": "Post-task evidence protocol for measuring Agent Toolkit module value and cost on real tasks.",
+  "plane": "evaluation",
+  "status": "experimental",
+  "kind": "artifact-protocol",
+  "phase": "post-task",
+  "invocation_owners": [
+    "native-agent",
+    "user",
+    "ci"
+  ],
+  "requires_terminal_outcome": true,
+  "self_activates": false,
+  "auto_invokes_modules": false,
+  "mutates_user_task": false,
+  "side_effects": [
+    "external-private-observation-append"
+  ],
+  "requires_host_write_authority": true,
+  "artifacts": {
+    "charter": "CHARTER.md",
+    "protocol": "protocol.md",
+    "observation_schema": "schemas/observation-v1.schema.json",
+    "report_template": "templates/decision-report-v1.md"
+  }
+}
