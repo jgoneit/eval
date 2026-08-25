@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:extension:seal-metrics:v1",
+  "title": "Eval Seal metrics v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "values"],
+  "properties": {
+    "schema_version": {"const": "seal-metrics/v1"},
+    "values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completion_decision", "false_acceptance", "evidence_corruption_bypass", "source_binding_bypass", "false_source_mismatch", "task_authoring_time", "completion_refusal_understood", "added_user_interventions"],
+      "properties": {
+        "completion_decision": {"enum": ["accepted", "refused", "not-issued", null]},
+        "false_acceptance": {"type": ["boolean", "null"]},
+        "evidence_corruption_bypass": {"type": ["boolean", "null"]},
+        "source_binding_bypass": {"type": ["boolean", "null"]},
+        "false_source_mismatch": {"type": ["boolean", "null"]},
+        "task_authoring_time": {"$ref": "#/$defs/timeMeasurement"},
+        "completion_refusal_understood": {"type": ["boolean", "null"]},
+        "added_user_interventions": {"$ref": "#/$defs/nullableCount"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"completion_decision": {"const": "accepted"}}, "required": ["completion_decision"]},
+          "then": {"properties": {"completion_refusal_understood": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"completion_decision": {"const": "refused"}}, "required": ["completion_decision"]},
+          "then": {"properties": {"false_acceptance": {"type": "null"}}}
+        },
+        {
+          "if": {"properties": {"completion_decision": {"enum": ["not-issued", null]}}, "required": ["completion_decision"]},
+          "then": {"properties": {"false_acceptance": {"type": "null"}, "completion_refusal_understood": {"type": "null"}}}
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "nullableCount": {"type": ["integer", "null"], "minimum": 0, "maximum": 1000000},
+    "timeMeasurement": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "seconds"],
+          "properties": {
+            "method": {"const": "measured"},
+            "seconds": {"type": "integer", "minimum": 0, "maximum": 31536000}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "lower_seconds", "upper_seconds"],
+          "properties": {
+            "method": {"const": "bounded-estimate"},
+            "lower_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000},
+            "upper_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000}
+          }
+        }
+      ]
+    }
+  }
+}

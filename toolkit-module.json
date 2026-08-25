@@ -2,10 +2,11 @@
   "schema_version": "toolkit-module/v1",
   "id": "eval",
   "name": "Eval",
-  "description": "Post-task evidence protocol for measuring Agent Toolkit module value and cost on real tasks.",
+  "version": "0.2.0-dev.0",
+  "description": "Native Agent post-task observation and deterministic analysis for Agent Toolkit module value and cost.",
   "plane": "evaluation",
   "status": "experimental",
-  "kind": "artifact-protocol",
+  "kind": "native-agent-product",
   "phase": "post-task",
   "invocation_owners": [
     "native-agent",
@@ -16,14 +17,65 @@
   "self_activates": false,
   "auto_invokes_modules": false,
   "mutates_user_task": false,
+  "harness_owns_execution": false,
   "side_effects": [
-    "external-private-observation-append"
+    "external-private-v2-observation-append"
   ],
   "requires_host_write_authority": true,
+  "public_commands": [
+    {
+      "name": "version",
+      "invocation": "evalctl --version",
+      "access": "read-only"
+    },
+    {
+      "name": "observe",
+      "invocation": "evalctl observe --input - [--best-effort] [--state-root ABS]",
+      "access": "external-private-state-write"
+    },
+    {
+      "name": "validate",
+      "invocation": "evalctl validate [--file PATH | --state-root ABS]",
+      "access": "read-only"
+    },
+    {
+      "name": "summarize",
+      "invocation": "evalctl summarize --as-of DATE [--from DATE] [--through DATE] [--format json|markdown]",
+      "access": "read-only"
+    },
+    {
+      "name": "compare",
+      "invocation": "evalctl compare --module ID --by usage|version [--left VERSION --right VERSION] --as-of DATE",
+      "access": "read-only"
+    }
+  ],
   "artifacts": {
     "charter": "CHARTER.md",
     "protocol": "protocol.md",
-    "observation_schema": "schemas/observation-v1.schema.json",
+    "privacy_contract": "PRIVACY.md",
+    "cli": "cmd/evalctl",
+    "plugin_manifest": ".codex-plugin/plugin.json",
+    "skill": "skills/eval/SKILL.md",
+    "observation_schemas": {
+      "v1_read_compatibility": "schemas/observation-v1.schema.json",
+      "v2_write": "schemas/observation-v2.schema.json",
+      "v2_draft": "schemas/observe-draft-v2.schema.json"
+    },
+    "extension_schemas": [
+      "schemas/extensions/completion-effect-v1.schema.json",
+      "schemas/extensions/requirements-effect-v1.schema.json",
+      "schemas/extensions/security-effect-v1.schema.json",
+      "schemas/extensions/seal-metrics-v1.schema.json",
+      "schemas/extensions/spec-metrics-v1.schema.json",
+      "schemas/extensions/ward-metrics-v1.schema.json"
+    ],
     "report_template": "templates/decision-report-v1.md"
-  }
+  },
+  "read_observation_versions": [
+    "eval-observation/v1",
+    "eval-observation/v2"
+  ],
+  "write_observation_version": "eval-observation/v2",
+  "automatic_release_decision": false,
+  "manual_privacy_review_required_for_publication": true
 }

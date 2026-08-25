@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:extension:requirements-effect:v1",
+  "title": "Eval requirements task effect v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "values"],
+  "properties": {
+    "schema_version": {"const": "requirements-effect/v1"},
+    "values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "late_material_decisions",
+        "api_contract_changes_after_implementation",
+        "data_model_changes_after_implementation",
+        "requirements_misunderstanding_rework",
+        "user_confirmation_questions",
+        "agent_requirements_questions",
+        "acceptance_criteria_gap_delayed_defect"
+      ],
+      "properties": {
+        "late_material_decisions": {"$ref": "#/$defs/lateMaterialDecisions"},
+        "api_contract_changes_after_implementation": {"$ref": "#/$defs/nullableCount"},
+        "data_model_changes_after_implementation": {"$ref": "#/$defs/nullableCount"},
+        "requirements_misunderstanding_rework": {"type": ["boolean", "null"]},
+        "user_confirmation_questions": {"$ref": "#/$defs/nullableCount"},
+        "agent_requirements_questions": {"$ref": "#/$defs/nullableCount"},
+        "acceptance_criteria_gap_delayed_defect": {"type": ["boolean", "null"]}
+      }
+    }
+  },
+  "$defs": {
+    "nullableCount": {"type": ["integer", "null"], "minimum": 0, "maximum": 1000000},
+    "lateMaterialDecisions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["total", "api", "data_model", "user_behavior", "authentication_authorization", "consistency_rules", "scope"],
+      "properties": {
+        "total": {"$ref": "#/$defs/nullableCount"},
+        "api": {"$ref": "#/$defs/nullableCount"},
+        "data_model": {"$ref": "#/$defs/nullableCount"},
+        "user_behavior": {"$ref": "#/$defs/nullableCount"},
+        "authentication_authorization": {"$ref": "#/$defs/nullableCount"},
+        "consistency_rules": {"$ref": "#/$defs/nullableCount"},
+        "scope": {"$ref": "#/$defs/nullableCount"}
+      }
+    }
+  }
+}

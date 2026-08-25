@@ -1,0 +1,7 @@
+interface:
+  display_name: "Eval"
+  short_description: "Record and analyze post-task observations"
+  default_prompt: "Use $eval to validate my private observation store."
+
+policy:
+  allow_implicit_invocation: true

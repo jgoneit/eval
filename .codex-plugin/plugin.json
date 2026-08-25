@@ -1,0 +1,36 @@
+{
+  "name": "eval",
+  "version": "0.2.0-dev.0+codex.20260825144155",
+  "description": "Record private post-task observations and produce deterministic Eval analyses.",
+  "author": {
+    "name": "Jaegon Seo",
+    "email": "jgoneit@gmail.com",
+    "url": "https://github.com/jgoneit"
+  },
+  "homepage": "https://github.com/jgoneit/eval",
+  "repository": "https://github.com/jgoneit/eval",
+  "license": "MIT",
+  "keywords": [
+    "agent",
+    "evaluation",
+    "observability"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Eval",
+    "shortDescription": "Record and analyze post-task observations",
+    "longDescription": "Eval provides a thin Native Agent surface for private, best-effort post-task observations and deterministic validation, summary, and comparison reports.",
+    "developerName": "Jaegon Seo",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/jgoneit/eval",
+    "defaultPrompt": [
+      "Use $eval to validate the private observation store.",
+      "Use $eval to summarize observations through today.",
+      "Use $eval to compare a module by usage."
+    ]
+  }
+}

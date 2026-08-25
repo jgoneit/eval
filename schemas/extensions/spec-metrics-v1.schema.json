@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:extension:spec-metrics:v1",
+  "title": "Eval Spec metrics v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "values"],
+  "properties": {
+    "schema_version": {"const": "spec-metrics/v1"},
+    "values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_created", "spec_implementation_divergence", "unnecessary_artifacts", "drafting_time", "readable_by_user", "directly_usable_by_agent", "appropriately_sized", "important_decisions_distinguished", "would_reuse"],
+      "properties": {
+        "artifact_created": {"type": ["boolean", "null"]},
+        "spec_implementation_divergence": {"type": ["boolean", "null"]},
+        "unnecessary_artifacts": {"$ref": "#/$defs/nullableCount"},
+        "drafting_time": {"$ref": "#/$defs/timeMeasurement"},
+        "readable_by_user": {"type": ["boolean", "null"]},
+        "directly_usable_by_agent": {"type": ["boolean", "null"]},
+        "appropriately_sized": {"type": ["boolean", "null"]},
+        "important_decisions_distinguished": {"type": ["boolean", "null"]},
+        "would_reuse": {"type": ["boolean", "null"]}
+      }
+    }
+  },
+  "$defs": {
+    "nullableCount": {"type": ["integer", "null"], "minimum": 0, "maximum": 1000000},
+    "timeMeasurement": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "seconds"],
+          "properties": {
+            "method": {"const": "measured"},
+            "seconds": {"type": "integer", "minimum": 0, "maximum": 31536000}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "lower_seconds", "upper_seconds"],
+          "properties": {
+            "method": {"const": "bounded-estimate"},
+            "lower_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000},
+            "upper_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000}
+          }
+        }
+      ]
+    }
+  }
+}

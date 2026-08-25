@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:extension:completion-effect:v1",
+  "title": "Eval completion task effect v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "values"],
+  "properties": {
+    "schema_version": {"const": "completion-effect/v1"},
+    "values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["terminal_completion_invalidated"],
+      "properties": {
+        "terminal_completion_invalidated": {"type": ["boolean", "null"]}
+      }
+    }
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:observation:v2",
+  "title": "Eval Observation v2",
+  "description": "A module-neutral, privacy-preserving post-task observation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "observation_id",
+    "task_id",
+    "revision",
+    "supersedes",
+    "terminal_on",
+    "recorded_on",
+    "population",
+    "task_type",
+    "agent",
+    "model",
+    "host_os",
+    "modules",
+    "outcome",
+    "task_effects"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-observation/v2"},
+    "observation_id": {"$ref": "#/$defs/uuid4"},
+    "task_id": {"$ref": "#/$defs/uuid4"},
+    "revision": {"type": "integer", "minimum": 1, "maximum": 1000000},
+    "supersedes": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/uuid4"}
+      ]
+    },
+    "terminal_on": {"$ref": "#/$defs/date"},
+    "recorded_on": {"$ref": "#/$defs/date"},
+    "population": {"enum": ["real", "synthetic"]},
+    "task_type": {"$ref": "#/$defs/taskType"},
+    "agent": {
+      "oneOf": [
+        {"type": "null"},
+        {"enum": ["codex", "other"]}
+      ]
+    },
+    "model": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "#/$defs/publicIdentifier"}
+      ]
+    },
+    "host_os": {
+      "oneOf": [
+        {"type": "null"},
+        {"enum": ["darwin", "linux", "windows", "other"]}
+      ]
+    },
+    "modules": {"$ref": "#/$defs/modules"},
+    "outcome": {"$ref": "#/$defs/outcome"},
+    "task_effects": {"$ref": "#/$defs/taskEffects"}
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["revision"],
+        "properties": {"revision": {"const": 1}}
+      },
+      "then": {"properties": {"supersedes": {"type": "null"}}},
+      "else": {"properties": {"supersedes": {"$ref": "#/$defs/uuid4"}}}
+    }
+  ],
+  "$defs": {
+    "uuid4": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "date": {"type": "string", "format": "date"},
+    "publicIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+    },
+    "moduleIdentifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "taskType": {
+      "enum": [
+        "backend-feature",
+        "frontend-feature",
+        "full-stack-feature",
+        "bug-fix",
+        "refactor",
+        "test",
+        "documentation",
+        "security",
+        "release",
+        "operations",
+        "research",
+        "other"
+      ]
+    },
+    "nullableBoolean": {"type": ["boolean", "null"]},
+    "nullableCount": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 1000000
+    },
+    "version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value"],
+      "properties": {
+        "status": {"enum": ["known-public", "unavailable", "not-applicable"]},
+        "value": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/publicIdentifier"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "known-public"}}, "required": ["status"]},
+          "then": {"properties": {"value": {"$ref": "#/$defs/publicIdentifier"}}},
+          "else": {"properties": {"value": {"type": "null"}}}
+        }
+      ]
+    },
+    "extensionEnvelope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "values"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 128,
+          "pattern": "^[a-z][a-z0-9-]*/v[1-9][0-9]*$"
+        },
+        "values": {"type": "object"}
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["used", "version", "metrics"],
+      "properties": {
+        "used": {"type": "boolean"},
+        "version": {"$ref": "#/$defs/version"},
+        "metrics": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/extensionEnvelope"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"used": {"const": true}}, "required": ["used"]},
+          "then": {
+            "properties": {
+              "version": {
+                "properties": {"status": {"enum": ["known-public", "unavailable"]}}
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "version": {
+                "properties": {"status": {"const": "not-applicable"}, "value": {"type": "null"}}
+              },
+              "metrics": {"type": "null"}
+            }
+          }
+        }
+      ]
+    },
+    "modules": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/moduleIdentifier"},
+      "additionalProperties": {"$ref": "#/$defs/module"}
+    },
+    "measuredTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "seconds"],
+      "properties": {
+        "method": {"const": "measured"},
+        "seconds": {"type": "integer", "minimum": 0, "maximum": 31536000}
+      }
+    },
+    "boundedEstimatedTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["method", "lower_seconds", "upper_seconds"],
+      "properties": {
+        "method": {"const": "bounded-estimate"},
+        "lower_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000},
+        "upper_seconds": {"type": "integer", "minimum": 0, "maximum": 31536000}
+      }
+    },
+    "timeMeasurement": {
+      "oneOf": [
+        {"$ref": "#/$defs/measuredTime"},
+        {"$ref": "#/$defs/boundedEstimatedTime"},
+        {"type": "null"}
+      ]
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "user_interventions", "module_interaction_time", "rework_required"],
+      "properties": {
+        "status": {"enum": ["completed", "failed", "abandoned"]},
+        "user_interventions": {"$ref": "#/$defs/nullableCount"},
+        "module_interaction_time": {"$ref": "#/$defs/timeMeasurement"},
+        "rework_required": {"$ref": "#/$defs/nullableBoolean"}
+      }
+    },
+    "taskEffects": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/moduleIdentifier"},
+      "additionalProperties": {"$ref": "#/$defs/extensionEnvelope"}
+    }
+  }
+}

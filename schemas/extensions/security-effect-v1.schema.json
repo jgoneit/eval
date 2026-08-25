@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:extension:security-effect:v1",
+  "title": "Eval security task effect v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "values"],
+  "properties": {
+    "schema_version": {"const": "security-effect/v1"},
+    "values": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["destructive_escape", "protected_secret_escape"],
+      "properties": {
+        "destructive_escape": {"type": ["boolean", "null"]},
+        "protected_secret_escape": {"type": ["boolean", "null"]}
+      }
+    }
+  }
+}
