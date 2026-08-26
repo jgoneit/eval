@@ -1,130 +1,130 @@
-# Eval
+# Eval 20-Task Experiment
 
-Eval measures whether each Agent Toolkit module creates more value than cost on
-real tasks.
+Eval is a bounded recorder experiment, not a Toolkit product. It records a
+small set of facts after eligible Codex tasks terminate so a person can decide
+whether a larger evaluation tool is justified.
 
-Eval is a post-task artifact protocol in the Evaluation plane. It is not a
-Plugin, Skill, Hook, runtime, telemetry service, or workflow controller.
+Version: `evalctl 0.2.0-experiment.1`
 
-## Status
-
-Eval v0.1 currently provides a charter, observation protocol, JSON Schema,
-synthetic fixtures, report template, provider-neutral module manifest, and
-development verification. This is a contract scaffold, not a completed
-Evaluation MVP: the repository contains no real observations or cumulative
-decision report.
-
-## Position and invocation
-
-The Native Agent, user, or CI owns the task, chooses modules, and decides
-whether Eval is useful after the task reaches a terminal outcome.
+## Public surface
 
 ```text
-Native Agent / User / CI
-        |
-        | uses Spec, Ward, Seal, or none as needed
-        v
-  terminal task outcome
-        |
-        | selects Eval when measurement is useful
-        v
- post-task observation
-        |
-        v
- aggregate report and human decision
+evalctl --version
+evalctl observe [--state-root ABS]
 ```
 
-Caller-owned invocation is not self-activation. Eval does not detect task
-completion, schedule itself, modify the completed task, invoke another module,
-choose workflow order, repair work, or apply a release decision. Appending an
-observation requires the caller to have Host write authority for the external
-private data file. A standing user or Host policy may provide that authority;
-Eval adds no per-observation approval workflow.
+`observe` reads exactly one JSON object from standard input. Only malformed CLI
+arguments return exit 64. Input, permission, lock, or storage failures are
+best-effort skips with exit 0.
 
-The provider-neutral discovery contract is
-[`toolkit-module.json`](toolkit-module.json). A Toolkit registry may link to
-that contract, but it must not execute Eval or turn it into a central runtime.
+```json
+{"status":"skipped","reason":"invalid-observation"}
+```
 
-## Observation model
+A successful atomic replacement returns its immutable slot. If the replacement
+completed but final directory durability could not be confirmed, the row is
+still recorded and reported honestly.
 
-One user objective is one real task. Retries, resumptions, recovery attempts,
-and OS-specific reruns remain part of that task. Synthetic observations test
-the contract and never count as real-task evidence.
+```json
+{"status":"recorded","slot":1,"durability":"confirmed"}
+{"status":"recorded","slot":1,"durability":"unconfirmed"}
+```
 
-Each observation records bounded facts about:
+## Observation contract
 
-- task type, terminal outcome, Agent, model, and primary host OS;
-- which Spec, Ward, and Seal versions were used;
-- task effects that can be assessed whether a module was used or not;
-- module-specific decisions, defects, cost, and friction for modules that were
-  used.
+```json
+{
+  "outcome": "completed",
+  "rework_required": false,
+  "ward": {
+    "used": true,
+    "version": null,
+    "defects_caught_before_terminal": 1,
+    "added_user_interventions": 0,
+    "interaction_seconds": 2,
+    "normal_work_blocked": false
+  },
+  "seal": {
+    "used": false,
+    "version": null
+  }
+}
+```
 
-Unknown or unassessed values remain `null`; they are never guessed as false or
-zero. Time is either measured, a bounded estimate, or `null`.
+`outcome`, `ward`, `seal`, and each module's `used` and `version` are required.
+Effects and `rework_required` are optional and should be supplied only when the
+host already knows them. An unused module requires `version: null` and forbids
+effects. A used module may have `version: null`; that row belongs to the usage
+cohort but cannot support an exact-version comparison.
 
-Read [CHARTER.md](CHARTER.md), [protocol.md](protocol.md), and
-[PRIVACY.md](PRIVACY.md) before appending data.
+The recorder rejects unknown or duplicate keys, non-integral count or duration
+representations, negative values, free text, and input-supplied identity or
+dates. It generates only `schema_version`, `slot`, and `recorded_at`.
 
-## Private data and single writer
+## Private journal
 
-Raw observations stay outside every source checkout:
+The default journal is:
 
-- `$XDG_STATE_HOME/jgoneit/eval/v1/observations.jsonl` when
-  `XDG_STATE_HOME` is set to an absolute path;
-- `$HOME/.local/state/jgoneit/eval/v1/observations.jsonl` only when
-  `XDG_STATE_HOME` is unset and `HOME` is absolute.
+```text
+$XDG_STATE_HOME/jgoneit/eval-experiment/v1/journal.jsonl             (all platforms when set)
+$HOME/.local/state/jgoneit/eval-experiment/v1/journal.jsonl          (Darwin/Linux fallback)
+%USERPROFILE%\.local\state\jgoneit\eval-experiment\v1\journal.jsonl (Windows fallback)
+```
 
-Fail closed for relative state roots or any resolved path inside a Git
-worktree. On POSIX-like hosts, the state directory has mode `0700` and the file
-has mode `0600`; other hosts use equivalent current-user-only access controls.
+The journal contains successful observations only and stops after 20 contiguous
+slots. Existing rows are immutable. Before each append, the writer validates
+the complete journal while holding a kernel-backed exclusive lock. It uses a
+private same-directory temporary file, file sync, atomic replacement, and a
+directory durability attempt. State traversal is anchored with Go `os.Root`;
+unsafe ownership, permissions, symlinks, reparse points, and regular-file hard
+links fail closed on Darwin, Linux, and Windows.
 
-Eval v0.1 permits exactly one active writer for an observation file. If the
-caller cannot establish exclusive single-writer access, it does not append.
-There is no daemon, lock service, concurrent merge protocol, or shared Toolkit
-state.
+Legacy Eval v1/v2 state is neither read nor migrated.
+
+## Host experiment policy
+
+The experiment population is the next 20 eligible root Codex tasks after the
+managed host policy becomes active. Codex loads global `~/.codex/AGENTS.md`
+guidance at session start, so only fresh tasks are eligible after installation.
+See the [OpenAI AGENTS.md documentation](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+Eligible terminal outcomes are `completed`, `failed`, and `abandoned`. Eval
+development, pure Q&A, and subagent child tasks are excluded in advance. Ward
+or Seal usage and the quality of the result never exclude a task afterward.
+
+For an eligible task, the primary Agent makes one silent `evalctl observe`
+attempt after the task outcome is fixed. It does not:
+
+- run Ward or Seal to discover a metric or version;
+- ask a question or request approval;
+- retry, emit progress, or add an Eval message;
+- mutate the task result or turn an observation failure into a task failure.
+
+The Host task history supplies the population denominator and missing-attempt
+count. The journal intentionally does not store skipped rows or task identity.
+The managed host block is removed after the twentieth eligible task.
+
+## Decision boundary
+
+After 20 eligible tasks, a person performs the privacy review and manual report.
+Eval does not infer causality, recommend a release, or retain, promote, or remove
+another module.
+
+- Fewer than 10 successful rows: do not promote; reduce input or stop Eval.
+- Provisioning failures: report separately from observation burden.
+- Ward or Seal used/unused cohort below 5: do not compare that module.
+- Reintroduce `validate`, `summarize`, `compare`, Plugin packaging, or Harness
+  registration only after the corresponding repeated need is observed.
 
 ## Development verification
 
-Eval has no Python or Go product implementation. Repository verification uses a
-pinned development-only JSON Schema validator:
-
 ```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements-dev.txt
-scripts/verify.sh
+gofmt -w cmd internal
+go vet ./...
+go test ./...
+go test -race ./...
+go build ./cmd/evalctl
 ```
 
-This verifies schemas, synthetic fixtures, privacy canaries, report structure,
-and repository boundaries. It is not an installed Eval command and does not
-read, validate, or mutate the user's private observation file. The designated
-writer and report reviewer remain responsible for protocol-level date, bound,
-count, and revision-chain relationships.
-
-## Reports and decisions
-
-Analysis uses the latest valid revision for each real task, discloses missing
-values and sample sizes, and treats used-versus-unused results as observational
-rather than causal. A private cumulative report remains outside source
-checkouts. A sanitized aggregate may be published only after manual privacy
-review; public cohorts with `n < 5` and inferable complementary cells are
-suppressed.
-
-Eval supplies evidence, not a universal threshold. Retention, modification,
-promotion, removal, and additional experiments remain human decisions.
-
-## Completion boundary
-
-Passing `scripts/verify.sh` establishes only that the contract scaffold is
-internally consistent. The Evaluation MVP additionally requires real Task
-observations and one privacy-reviewed cumulative report. That milestone proves
-the evidence workflow operated; it does not prove that a module caused an
-outcome or met a release threshold.
-
-## Future automation boundary
-
-Only repeated malformed records, missing versions, inconsistent aggregation,
-multiple writers, or repeated reporting work can justify a future Go CLI. The
-only candidates are `eval validate`, `eval summarize`, and `eval compare`.
-
-`eval run-agent`, module execution, orchestration, repair, automatic promotion,
-and self-triggered recording remain prohibited.
+GitHub Actions runs formatting, vet, tests, and builds on macOS, Linux, and
+Windows, plus the race detector on Linux.

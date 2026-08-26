@@ -1,0 +1,79 @@
+name: verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: Check formatting
+        shell: bash
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      - name: Build evalctl
+        run: go build ./cmd/evalctl
+
+  race:
+    name: race
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - run: go test -race ./...
+
+  surface:
+    name: clean-slate surface
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject removed product and compatibility surfaces
+        shell: bash
+        run: |
+          test ! -e .codex-plugin
+          test ! -e skills
+          test ! -e fixtures
+          test ! -e templates
+          test ! -e toolkit-module.json
+          test ! -e requirements-dev.txt
+          test ! -e scripts/verify.sh
+          test ! -e internal/analyze
+          test "$(find schemas -type f | wc -l | tr -d ' ')" = "1"
+          test -f schemas/experiment-v1.schema.json
+          ! rg -n 'eval-observation|observations\.jsonl|task_id|supersedes|observe-draft-v2' cmd internal schemas go.mod
+          ! rg -n 'runValidate|runSummarize|runCompare|case "(validate|summarize|compare)"' cmd internal/cli --glob '!**/*_test.go'
+          ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**'
+      - name: Verify legacy privacy quarantine
+        shell: bash
+        run: |
+          mkdir -p reports/private
+          printf '%s\n' canary > observations.jsonl
+          printf '%s\n' canary > reports/private/canary.jsonl
+          test -z "$(git ls-files -- observations.jsonl reports/private)"
+          git check-ignore --quiet observations.jsonl
+          git check-ignore --quiet reports/private/canary.jsonl
+          test -z "$(git add --dry-run -A)"

@@ -1,16 +1,10 @@
 .DS_Store
 .venv/
-.local/
 
-# Raw or generated evaluation data must not be tracked.
+# Privacy quarantine for checkout-local data from legacy Eval versions.
 /observations.jsonl
 /reports/private/
-/reports/generated/
-/reports/drafts/
 
-# Development and editor artifacts.
-__pycache__/
-*.py[cod]
 *.tmp
 *.swp
 coverage.out
