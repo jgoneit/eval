@@ -1,5 +1,10 @@
 .DS_Store
 .venv/
+
+# Privacy quarantine for checkout-local data from legacy Eval versions.
+/observations.jsonl
+/reports/private/
+
 *.tmp
 *.swp
 coverage.out

@@ -67,3 +67,13 @@ jobs:
           ! rg -n 'eval-observation|observations\.jsonl|task_id|supersedes|observe-draft-v2' cmd internal schemas go.mod
           ! rg -n 'runValidate|runSummarize|runCompare|case "(validate|summarize|compare)"' cmd internal/cli --glob '!**/*_test.go'
           ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**'
+      - name: Verify legacy privacy quarantine
+        shell: bash
+        run: |
+          mkdir -p reports/private
+          printf '%s\n' canary > observations.jsonl
+          printf '%s\n' canary > reports/private/canary.jsonl
+          test -z "$(git ls-files -- observations.jsonl reports/private)"
+          git check-ignore --quiet observations.jsonl
+          git check-ignore --quiet reports/private/canary.jsonl
+          test -z "$(git add --dry-run -A)"
