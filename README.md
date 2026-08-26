@@ -66,8 +66,9 @@ dates. It generates only `schema_version`, `slot`, and `recorded_at`.
 The default journal is:
 
 ```text
-$XDG_STATE_HOME/jgoneit/eval-experiment/v1/journal.jsonl
-$HOME/.local/state/jgoneit/eval-experiment/v1/journal.jsonl
+$XDG_STATE_HOME/jgoneit/eval-experiment/v1/journal.jsonl             (all platforms when set)
+$HOME/.local/state/jgoneit/eval-experiment/v1/journal.jsonl          (Darwin/Linux fallback)
+%USERPROFILE%\.local\state\jgoneit\eval-experiment\v1\journal.jsonl (Windows fallback)
 ```
 
 The journal contains successful observations only and stops after 20 contiguous
