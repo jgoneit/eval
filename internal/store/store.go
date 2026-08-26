@@ -267,9 +267,15 @@ func (s *Store) verifyDirectories(root *os.Root) error {
 }
 
 func (s *Store) readExisting(root *os.Root) ([]byte, error) {
-	if err := inspectPrivateFile(s.path); errors.Is(err, fs.ErrNotExist) {
+	rootInfo, rootErr := root.Lstat(s.journalName)
+	absoluteInfo, absoluteErr := os.Lstat(s.path)
+	if errors.Is(rootErr, fs.ErrNotExist) && errors.Is(absoluteErr, fs.ErrNotExist) {
 		return nil, nil
-	} else if err != nil {
+	}
+	if rootErr != nil || absoluteErr != nil || !os.SameFile(rootInfo, absoluteInfo) {
+		return nil, storeError(CategoryUnsafePath, "inspect-private-file-identity", s.path, ErrUnsafePath)
+	}
+	if err := inspectPrivateFile(s.path); err != nil {
 		return nil, err
 	}
 	file, err := root.Open(s.journalName)
