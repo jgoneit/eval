@@ -32,6 +32,7 @@ type Runtime struct {
 	Stdout       io.Writer
 	Stderr       io.Writer
 	Getenv       func(string) string
+	UserHomeDir  func() (string, error)
 	Now          func() time.Time
 	StoreOptions store.Options
 }
@@ -73,7 +74,7 @@ func runObserve(ctx context.Context, args []string, runtime Runtime) int {
 		writeResult(runtime.Stdout, observeResult{Status: "skipped", Reason: "invalid-observation"})
 		return ExitSuccess
 	}
-	root, err := state.Root(*stateRoot, runtime.Getenv)
+	root, err := state.Root(*stateRoot, runtime.Getenv, runtime.UserHomeDir)
 	if err != nil {
 		writeResult(runtime.Stdout, observeResult{Status: "skipped", Reason: "unsafe-state-path"})
 		return ExitSuccess
@@ -170,6 +171,9 @@ func defaults(runtime Runtime) Runtime {
 	}
 	if runtime.Getenv == nil {
 		runtime.Getenv = os.Getenv
+	}
+	if runtime.UserHomeDir == nil {
+		runtime.UserHomeDir = os.UserHomeDir
 	}
 	if runtime.Now == nil {
 		runtime.Now = time.Now

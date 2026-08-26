@@ -8,19 +8,25 @@ import (
 
 const JournalRelativePath = "jgoneit/eval-experiment/v1/journal.jsonl"
 
-// Root resolves the XDG state root without creating it. Store owns creation
-// and security checks; this package only defines the public location contract.
-func Root(explicit string, getenv func(string) string) (string, error) {
+// Root resolves the recorder state root without creating it. Store owns
+// creation and security checks; this package only defines the location contract.
+func Root(explicit string, getenv func(string) string, userHomeDir func() (string, error)) (string, error) {
 	if getenv == nil {
 		getenv = os.Getenv
+	}
+	if userHomeDir == nil {
+		userHomeDir = os.UserHomeDir
 	}
 	root := explicit
 	if root == "" {
 		root = getenv("XDG_STATE_HOME")
 		if root == "" {
-			home := getenv("HOME")
+			home, err := userHomeDir()
+			if err != nil {
+				return "", fmt.Errorf("resolve user home: %w", err)
+			}
 			if home == "" || !filepath.IsAbs(home) || filepath.Clean(home) != home {
-				return "", fmt.Errorf("HOME must be an absolute clean path")
+				return "", fmt.Errorf("user home must be an absolute clean path")
 			}
 			root = filepath.Join(home, ".local", "state")
 		}
