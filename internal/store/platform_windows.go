@@ -78,8 +78,15 @@ func checkStateRoot(path string, info os.FileInfo) error {
 	if !windows.EqualSid(owner, user) {
 		return storeError(CategoryPermission, "check-state-root-owner", path, ErrPermission)
 	}
-	dacl, present, err := descriptor.DACL()
-	if err != nil || !present || dacl == nil {
+	control, _, err := descriptor.Control()
+	if err != nil {
+		return classifyError("read-state-root-security-control", path, err)
+	}
+	if control&windows.SE_DACL_PRESENT == 0 {
+		return storeError(CategoryPermission, "read-state-root-dacl", path, ErrPermission)
+	}
+	dacl, _, err := descriptor.DACL()
+	if err != nil || dacl == nil {
 		return storeError(CategoryPermission, "read-state-root-dacl", path, errors.Join(ErrPermission, err))
 	}
 	administrator, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
@@ -394,8 +401,9 @@ func privateSecurityAttributes() (*windows.SecurityAttributes, error) {
 	if err != nil {
 		return nil, err
 	}
+	userString := user.String()
 	descriptor, err := windows.SecurityDescriptorFromString(
-		fmt.Sprintf("D:P(A;;FA;;;%s)", user.String()),
+		fmt.Sprintf("O:%sD:P(A;;FA;;;%s)", userString, userString),
 	)
 	if err != nil {
 		return nil, err
