@@ -1,2 +1,0 @@
-# Development validation only; Eval has no Python product implementation.
-check-jsonschema==0.37.4
