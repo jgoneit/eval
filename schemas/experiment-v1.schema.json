@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:jgoneit:eval:experiment:v1",
+  "title": "Eval Bounded Host Experiment Row v1",
+  "description": "One stored row from the bounded Ward and Seal host experiment.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "slot",
+    "recorded_at",
+    "outcome",
+    "ward",
+    "seal"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-experiment/v1"},
+    "slot": {"type": "integer", "minimum": 1, "maximum": 20},
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\\.[0-9]{0,8}[1-9])?Z$"
+    },
+    "outcome": {"enum": ["completed", "failed", "abandoned"]},
+    "rework_required": {"type": "boolean"},
+    "ward": {"$ref": "#/$defs/module"},
+    "seal": {"$ref": "#/$defs/module"}
+  },
+  "$defs": {
+    "publicVersion": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+    },
+    "nonNegativeInt64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9223372036854775807
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["used", "version"],
+      "properties": {
+        "used": {"type": "boolean"},
+        "version": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/publicVersion"}
+          ]
+        },
+        "defects_caught_before_terminal": {"$ref": "#/$defs/nonNegativeInt64"},
+        "added_user_interventions": {"$ref": "#/$defs/nonNegativeInt64"},
+        "interaction_seconds": {"$ref": "#/$defs/nonNegativeInt64"},
+        "normal_work_blocked": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["used"],
+            "properties": {"used": {"const": false}}
+          },
+          "then": {
+            "properties": {"version": {"type": "null"}},
+            "not": {
+              "anyOf": [
+                {"required": ["defects_caught_before_terminal"]},
+                {"required": ["added_user_interventions"]},
+                {"required": ["interaction_seconds"]},
+                {"required": ["normal_work_blocked"]}
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
