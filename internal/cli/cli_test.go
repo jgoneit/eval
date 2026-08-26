@@ -48,7 +48,7 @@ func TestVersionAndUsageSurface(t *testing.T) {
 
 func TestObserveRecordsCanonicalRow(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
+	root := testStateRoot(t)
 	result, exit := captureObserve(t, root, validDraft, store.Options{})
 	if exit != ExitSuccess || result.Status != "recorded" || result.Slot != 1 {
 		t.Fatalf("observe = %+v exit %d", result, exit)
@@ -80,7 +80,7 @@ func TestObserveInvalidInputNeverCreatesJournal(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			root := t.TempDir()
+			root := testStateRoot(t)
 			result, exit := captureObserve(t, root, draft, store.Options{})
 			if exit != ExitSuccess || result.Status != "skipped" || result.Reason != "invalid-observation" {
 				t.Fatalf("observe = %+v exit %d", result, exit)
@@ -93,7 +93,7 @@ func TestObserveInvalidInputNeverCreatesJournal(t *testing.T) {
 }
 
 func TestObserveConcurrentSlotsAndBound(t *testing.T) {
-	root := t.TempDir()
+	root := testStateRoot(t)
 	results := make(chan capturedResult, experiment.MaxRows)
 	var wait sync.WaitGroup
 	for index := int64(0); index < experiment.MaxRows; index++ {
@@ -138,7 +138,7 @@ func TestObserveConcurrentSlotsAndBound(t *testing.T) {
 
 func TestObserveInvalidJournalIsPreserved(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
+	root := testStateRoot(t)
 	if result, _ := captureObserve(t, root, validDraft, store.Options{}); result.Status != "recorded" {
 		t.Fatalf("seed result = %+v", result)
 	}
@@ -173,7 +173,7 @@ func TestObserveFaultBoundaries(t *testing.T) {
 	}
 	for name, hooks := range precommit {
 		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
+			root := testStateRoot(t)
 			result, exit := captureObserve(t, root, validDraft, store.Options{Hooks: hooks})
 			if exit != ExitSuccess || result.Status != "skipped" || result.Reason != "state-io-error" {
 				t.Fatalf("result = %+v exit %d", result, exit)
@@ -190,7 +190,7 @@ func TestObserveFaultBoundaries(t *testing.T) {
 	}
 	for name, hooks := range postcommit {
 		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
+			root := testStateRoot(t)
 			result, exit := captureObserve(t, root, validDraft, store.Options{Hooks: hooks})
 			if exit != ExitSuccess || result.Status != "recorded" || result.Slot != 1 || result.Durability != "unconfirmed" {
 				t.Fatalf("result = %+v exit %d", result, exit)
@@ -214,7 +214,7 @@ func TestObservePrecommitFaultPreservesExistingJournal(t *testing.T) {
 		"beforeReplace": {BeforeReplace: func(_, _ string) error { return errors.New("injected") }},
 	} {
 		t.Run(name, func(t *testing.T) {
-			root := t.TempDir()
+			root := testStateRoot(t)
 			if result, _ := captureObserve(t, root, validDraft, store.Options{}); result.Status != "recorded" {
 				t.Fatalf("seed result = %+v", result)
 			}
@@ -251,6 +251,11 @@ func captureObserve(t *testing.T, root, draft string, options store.Options) (ca
 		t.Fatalf("decode %q: %v (stderr %q)", stdout.String(), err, stderr.String())
 	}
 	return result, exit
+}
+
+func testStateRoot(t *testing.T) string {
+	t.Helper()
+	return filepath.Join(t.TempDir(), "state")
 }
 
 func TestStateRootMustBeAbsoluteButFailureIsBestEffort(t *testing.T) {

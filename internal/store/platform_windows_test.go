@@ -169,6 +169,55 @@ func TestWindowsExclusiveLockTimeoutAndRelease(t *testing.T) {
 	releaseFileLock(second)
 }
 
+func TestWindowsStateRootMoveCannotRedirectCommit(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "state")
+	if err := createPrivateDir(root); err != nil {
+		t.Fatal(err)
+	}
+	moved := filepath.Join(parent, "state-moved")
+	moveSucceeded := false
+	journal := mustStore(t, root, Options{Hooks: Hooks{
+		BeforeReplace: func(_, _ string) error {
+			if err := os.Rename(root, moved); err != nil {
+				return err
+			}
+			moveSucceeded = true
+			return createPrivateDir(root)
+		},
+	}})
+	commit, err := journal.Update(context.Background(), appendObject(`{"value":1}`))
+	if moveSucceeded {
+		if err != nil || !commit.Committed {
+			t.Fatalf("anchored commit = %+v err = %v", commit, err)
+		}
+		newPath := filepath.Join(root, filepath.FromSlash(testRelativeJournal))
+		if _, err := os.Lstat(newPath); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("replacement root was mutated: %v", err)
+		}
+		movedPath := filepath.Join(moved, filepath.FromSlash(testRelativeJournal))
+		if got, err := os.ReadFile(movedPath); err != nil || string(got) != "{\"value\":1}\n" {
+			t.Fatalf("anchored journal = %q err = %v", got, err)
+		}
+		return
+	}
+	if err == nil || commit.Committed {
+		t.Fatalf("commit = %+v err = %v, want blocked precommit move", commit, err)
+	}
+	if !errors.Is(err, windows.ERROR_SHARING_VIOLATION) && !errors.Is(err, windows.ERROR_ACCESS_DENIED) {
+		t.Fatalf("move error = %v, want Windows sharing or access denial", err)
+	}
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("original root unavailable after blocked move: %v", err)
+	}
+	if _, err := os.Lstat(moved); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("moved root exists after blocked move: %v", err)
+	}
+	if _, err := os.Lstat(journal.Path()); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("journal committed after blocked move: %v", err)
+	}
+}
+
 func newWindowsPrivateFile(t *testing.T) string {
 	t.Helper()
 	directory := filepath.Join(t.TempDir(), "private")
