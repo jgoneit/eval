@@ -39,6 +39,39 @@ func TestUpdateAnchorsCommitWhenStateRootPathMoves(t *testing.T) {
 	}
 }
 
+func TestReadExistingRejectsMovedAbsolutePath(t *testing.T) {
+	root := privateTestRoot(t)
+	journal := mustStore(t, root, Options{})
+	if commit, err := journal.Update(context.Background(), appendObject(`{"value":1}`)); err != nil || !commit.Committed {
+		t.Fatalf("seed commit = %+v err = %v", commit, err)
+	}
+
+	stateRoot, err := os.OpenRoot(journal.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stateRoot.Close()
+	journalRoot, err := stateRoot.OpenRoot(journal.relativeDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer journalRoot.Close()
+
+	moved := journal.root + "-moved"
+	if err := os.Rename(journal.root, moved); err != nil {
+		t.Fatal(err)
+	}
+	existing, err := journal.readExisting(journalRoot)
+	if err == nil || !errors.Is(err, ErrUnsafePath) || CategoryOf(err) != CategoryUnsafePath || len(existing) != 0 {
+		t.Fatalf("existing = %q err = %v category = %s", existing, err, CategoryOf(err))
+	}
+
+	movedPath := filepath.Join(moved, journal.relativePath)
+	if got, err := os.ReadFile(movedPath); err != nil || string(got) != "{\"value\":1}\n" {
+		t.Fatalf("moved journal = %q err = %v", got, err)
+	}
+}
+
 func TestUpdateRejectsWritableAncestor(t *testing.T) {
 	parent := t.TempDir()
 	shared := filepath.Join(parent, "shared")
