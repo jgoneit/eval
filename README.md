@@ -7,7 +7,7 @@ Agent and checker execution belongs to external tools; Eval validates, grades,
 and compares their evidence. The original 20-task recorder remains compatible
 and separate.
 
-Version: `evalctl 0.4.0-experiment.1`
+Version: `evalctl 0.4.0-experiment.2`
 
 ## Public surface
 
@@ -32,6 +32,10 @@ See [coding assessment](docs/assessment.md) for the independent assessment
 contracts and [the external pilot tool](tools/pilot/README.md) for a reproducible
 three-case, two-instruction experiment. Assessment artifacts do not enter either
 experiment Journal. A separate dashboard can consume their versioned JSON.
+Comparison regrades the private `inputs.json` beside each assessment to verify
+that its findings match the retained suite and attempts. Keep this sidecar
+private. Recreate older assessment outputs from preserved inputs; missing
+configuration observations remain unavailable.
 
 ## Legacy observe command
 

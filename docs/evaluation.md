@@ -38,6 +38,10 @@ evalctl collect --experiment EXPERIMENT_UUID
 
 The start time is the actual initialization time and cannot be backdated in
 configuration. Validate both collection receipts and actual persisted state.
+Initialization prepares the private configuration and first Journal record
+together, then publishes their directory without replacing an existing
+experiment. A failure before publication leaves no partially registered ID.
+The command reports publication separately from confirmed directory durability.
 Repeat collection must add no new facts for unchanged sources. Register a new
 experiment to change the population or input configuration. Never merge the old
 20-task records into it or relabel earlier runs as new samples.
@@ -66,6 +70,10 @@ projects validated IDs, digest, mechanical results, scope/source stability,
 check times and historical Completion presence. A later Completion appends an
 event revision even when Evidence digest stays unchanged. It does not turn a
 historical Run into a new postactivation invocation or current Acceptance.
+Completion state and timestamp must form a consistent pair before activation
+time filtering: absent Completion has no timestamp, and present Completion has
+a valid timestamp. Contradictory exported metadata is an incomplete source,
+not evidence of a later invocation.
 Canonical Evidence has no run-producing Seal version, so `run_version: null`
 becomes an unknown execution-version cohort. The reader
 `exporter_version` is never substituted as the producing version. Version-qualified
