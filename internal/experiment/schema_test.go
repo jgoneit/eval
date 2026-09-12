@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestStoredRowSchemaIsTheOnlySchema(t *testing.T) {
+func TestStoredRowSchemaRemainsSeparateFromAssessmentSchemas(t *testing.T) {
 	t.Parallel()
 	_, source, _, ok := runtime.Caller(0)
 	if !ok {
@@ -19,10 +19,22 @@ func TestStoredRowSchemaIsTheOnlySchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].Name() != "experiment-v1.schema.json" {
+	want := map[string]bool{
+		"experiment-v1.schema.json": true,
+		"suite-v1.schema.json":      true,
+		"attempts-v1.schema.json":   true,
+		"assessment-v1.schema.json": true,
+		"comparison-v1.schema.json": true,
+	}
+	if len(entries) != len(want) {
 		t.Fatalf("schema entries = %v", entries)
 	}
-	data, err := os.ReadFile(filepath.Join(directory, entries[0].Name()))
+	for _, entry := range entries {
+		if entry.IsDir() || !want[entry.Name()] {
+			t.Fatalf("unexpected public schema %s", entry.Name())
+		}
+	}
+	data, err := os.ReadFile(filepath.Join(directory, "experiment-v1.schema.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

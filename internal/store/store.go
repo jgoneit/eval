@@ -36,7 +36,10 @@ type Hooks struct {
 
 type Options struct {
 	LockTimeout time.Duration
-	Hooks       Hooks
+	// MaxBytes defaults to the legacy journal limit. Callers may opt in to at
+	// most 64 MiB; this does not change the observe command's default.
+	MaxBytes int64
+	Hooks    Hooks
 }
 
 // Commit distinguishes pre-commit failures from failures after atomic replace.
@@ -55,6 +58,7 @@ type Store struct {
 	lockPath     string
 	privateDirs  []string
 	lockTimeout  time.Duration
+	maxBytes     int64
 	hooks        Hooks
 }
 
@@ -82,6 +86,13 @@ func New(stateRoot, relativePath string, options Options) (*Store, error) {
 	if timeout < 0 {
 		return nil, storeError(CategoryUnsafePath, "configure", target, ErrUnsafePath)
 	}
+	limit := options.MaxBytes
+	if limit == 0 {
+		limit = maxJournalBytes
+	}
+	if limit < 1 || limit > 64<<20 {
+		return nil, storeError(CategoryValidation, "configure-limit", target, ErrValidation)
+	}
 	directory := filepath.Dir(relative)
 	var privateDirs []string
 	if directory != "." {
@@ -95,7 +106,7 @@ func New(stateRoot, relativePath string, options Options) (*Store, error) {
 		root: root, relativePath: relative, relativeDir: directory,
 		journalName: filepath.Base(relative), lockName: filepath.Base(relative) + ".lock",
 		path: target, lockPath: target + ".lock",
-		privateDirs: privateDirs, lockTimeout: timeout, hooks: options.Hooks,
+		privateDirs: privateDirs, lockTimeout: timeout, maxBytes: limit, hooks: options.Hooks,
 	}, nil
 }
 
@@ -160,7 +171,39 @@ func (s *Store) Update(ctx context.Context, transaction Transaction) (Commit, er
 	if err := validateAppendOnly(existing, prospective); err != nil {
 		return Commit{}, err
 	}
+	if int64(len(prospective)) > s.maxBytes {
+		return Commit{}, storeError(CategoryValidation, "journal-limit", s.path, ErrValidation)
+	}
 	return s.replaceWith(journalRoot, prospective)
+}
+
+// Read returns a verified snapshot without creating directories or lock files.
+// Atomic replacement means a concurrent writer is either seen before or after
+// publication; an identity race is reported, never silently repaired.
+func (s *Store) Read() ([]byte, error) {
+	if err := rejectSymlinkComponents(s.path); err != nil {
+		return nil, err
+	}
+	if err := validateStateRootAncestors(s.root); err != nil {
+		return nil, err
+	}
+	if err := rejectGitWorktree(s.root); err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(s.root)
+	if err != nil {
+		return nil, classifyError("open-state-root", s.root, err)
+	}
+	defer root.Close()
+	if err := s.verifyTree(root); err != nil {
+		return nil, err
+	}
+	dir, err := root.OpenRoot(s.relativeDir)
+	if err != nil {
+		return nil, classifyError("open-journal-root", s.path, err)
+	}
+	defer dir.Close()
+	return s.readExisting(dir)
 }
 
 func (s *Store) prepare() (*os.Root, error) {
@@ -286,11 +329,11 @@ func (s *Store) readExisting(root *os.Root) ([]byte, error) {
 	if err := inspectOpenPrivateFile(file, s.path); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(io.LimitReader(file, maxJournalBytes+1))
+	data, err := io.ReadAll(io.LimitReader(file, s.maxBytes+1))
 	if err != nil {
 		return nil, classifyError("read-journal", s.path, err)
 	}
-	if len(data) > maxJournalBytes {
+	if int64(len(data)) > s.maxBytes {
 		return nil, storeError(CategoryValidation, "read-journal", s.path, ErrValidation)
 	}
 	return data, nil

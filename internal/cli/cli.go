@@ -47,6 +47,14 @@ func Run(ctx context.Context, args []string, runtime Runtime) int {
 		usage(runtime.Stdout)
 		return ExitSuccess
 	}
+	if len(args) > 0 {
+		switch args[0] {
+		case "assess", "compare":
+			return runAssessment(ctx, args, runtime)
+		case "experiment", "collect", "review", "report":
+			return runEvaluation(ctx, args, runtime)
+		}
+	}
 	if len(args) == 0 || args[0] != "observe" {
 		usage(runtime.Stderr)
 		return ExitUsage
@@ -157,6 +165,13 @@ func writeResult(writer io.Writer, result observeResult) {
 func usage(writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "usage: evalctl --version")
 	_, _ = fmt.Fprintln(writer, "       evalctl observe [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl experiment init --config FILE [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl collect --experiment ID [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl review export --experiment ID --out DIR [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl review apply --experiment ID --file FILE [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl report --experiment ID --format json|markdown [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl assess --suite FILE --attempts FILE --out DIR")
+	_, _ = fmt.Fprintln(writer, "       evalctl compare --baseline FILE --candidate FILE --format json|markdown")
 }
 
 func defaults(runtime Runtime) Runtime {

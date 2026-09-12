@@ -1,17 +1,39 @@
-# Eval 20-Task Experiment
+# Eval
 
-Eval is a bounded recorder experiment, not a Toolkit product. It records a
-small set of facts after eligible Codex tasks terminate so a person can decide
-whether a larger evaluation tool is justified.
+Eval collects bounded local facts about Ward and Seal, exports private human
+review packets, and grades fixed AI coding cases from normalized execution
+evidence. Result quality, process rules, and measured cost remain separate.
+Agent and checker execution belongs to external tools; Eval validates, grades,
+and compares their evidence. The original 20-task recorder remains compatible
+and separate.
 
-Version: `evalctl 0.2.0-experiment.1`
+Version: `evalctl 0.4.0-experiment.1`
 
 ## Public surface
 
 ```text
 evalctl --version
 evalctl observe [--state-root ABS]
+evalctl experiment init --config FILE [--state-root ABS]
+evalctl collect --experiment ID [--state-root ABS]
+evalctl review export --experiment ID --out DIR [--state-root ABS]
+evalctl review apply --experiment ID --file FILE [--state-root ABS]
+evalctl report --experiment ID --format json|markdown [--state-root ABS]
+evalctl assess --suite FILE --attempts FILE --out DIR
+evalctl compare --baseline FILE --candidate FILE --format json|markdown
 ```
+
+See [collection, review, and reporting](docs/evaluation.md) for the new workflow,
+data boundaries, denominator rules, and hourly Host scheduling. New experiments
+use `eval-ledger/v1` in `jgoneit/eval-experiment/v2/ID`; no previous journal is read,
+modified, migrated, or included in their population.
+
+See [coding assessment](docs/assessment.md) for the independent assessment
+contracts and [the external pilot tool](tools/pilot/README.md) for a reproducible
+three-case, two-instruction experiment. Assessment artifacts do not enter either
+experiment Journal. A separate dashboard can consume their versioned JSON.
+
+## Legacy observe command
 
 `observe` reads exactly one JSON object from standard input. Only malformed CLI
 arguments return exit 64. Input, permission, lock, or storage failures are
@@ -30,7 +52,7 @@ still recorded and reported honestly.
 {"status":"recorded","slot":1,"durability":"unconfirmed"}
 ```
 
-## Observation contract
+## Legacy observation contract
 
 ```json
 {
@@ -61,7 +83,7 @@ The recorder rejects unknown or duplicate keys, non-integral count or duration
 representations, negative values, free text, and input-supplied identity or
 dates. It generates only `schema_version`, `slot`, and `recorded_at`.
 
-## Private journal
+## Legacy private journal
 
 The default journal is:
 
@@ -81,7 +103,7 @@ links fail closed on Darwin, Linux, and Windows.
 
 Legacy Eval v1/v2 state is neither read nor migrated.
 
-## Host experiment policy
+## Legacy Host experiment policy
 
 The experiment population is the next 20 eligible root Codex tasks after the
 managed host policy becomes active. The Host launches every candidate with the
@@ -154,7 +176,10 @@ the experiment run, and restarts with a new activation time rather than
 continuing with the stale row. This minimal experiment does not correct or
 supersede recorded rows.
 
-## Decision boundary
+## Legacy experiment decision boundary
+
+The following thresholds apply only to the original v1 recorder experiment.
+New collection reports do not make threshold-based product decisions.
 
 After 20 eligible tasks, a person performs the privacy review and manual report.
 Eval does not infer causality, recommend a release, or retain, promote, or remove
@@ -163,8 +188,10 @@ another module.
 - Fewer than 10 successful rows: do not promote; reduce input or stop Eval.
 - Provisioning failures: report separately from observation burden.
 - Ward or Seal used/unused cohort below 5: do not compare that module.
-- Reintroduce `validate`, `summarize`, `compare`, Plugin packaging, or Harness
+- Reintroduce legacy `validate`/`summarize`, Plugin packaging, or Harness
   registration only after the corresponding repeated need is observed.
+  The new `compare` accepts coding assessments only; it does not revive legacy
+  observation comparison or change these original experiment thresholds.
 
 ## Development verification
 

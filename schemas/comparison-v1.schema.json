@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "comparison-v1.schema.json",
+  "title": "Eval comparison v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "eval-comparison/v1"
+    },
+    "evaluator_version": {
+      "const": "rules-v1"
+    },
+    "suite_id": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "suite_version": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "suite_digest": {
+      "$ref": "suite-v1.schema.json#/$defs/digest"
+    },
+    "baseline": {
+      "$ref": "attempts-v1.schema.json#/$defs/condition"
+    },
+    "candidate": {
+      "$ref": "attempts-v1.schema.json#/$defs/condition"
+    },
+    "environment": {
+      "$ref": "attempts-v1.schema.json#/$defs/environment"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "comparison-v1.schema.json#/$defs/case"
+      },
+      "maxItems": 1000,
+      "minItems": 1
+    },
+    "summary": {
+      "$ref": "comparison-v1.schema.json#/$defs/summary"
+    }
+  },
+  "required": [
+    "schema",
+    "evaluator_version",
+    "suite_id",
+    "suite_version",
+    "suite_digest",
+    "baseline",
+    "candidate",
+    "environment",
+    "cases",
+    "summary"
+  ],
+  "$defs": {
+    "delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cached_input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "duration_ms",
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens"
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "baseline": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "candidate": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "outcome_change": {
+          "enum": [
+            "improved",
+            "regressed",
+            "unchanged",
+            "unevaluated"
+          ]
+        },
+        "process_change": {
+          "enum": [
+            "improved",
+            "regressed",
+            "unchanged",
+            "unevaluated"
+          ]
+        },
+        "baseline_termination": {
+          "enum": [
+            "missing",
+            "completed",
+            "timeout",
+            "interrupted",
+            "agent_error",
+            "environment_error",
+            "authentication_error"
+          ]
+        },
+        "candidate_termination": {
+          "enum": [
+            "missing",
+            "completed",
+            "timeout",
+            "interrupted",
+            "agent_error",
+            "environment_error",
+            "authentication_error"
+          ]
+        },
+        "delta": {
+          "$ref": "comparison-v1.schema.json#/$defs/delta"
+        },
+        "baseline_process": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "candidate_process": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "rules": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "comparison-v1.schema.json#/$defs/rule"
+          }
+        }
+      },
+      "required": [
+        "case_id",
+        "baseline",
+        "candidate",
+        "outcome_change",
+        "process_change",
+        "baseline_termination",
+        "candidate_termination",
+        "delta",
+        "baseline_process",
+        "candidate_process",
+        "rules"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "comparable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "improved": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "regressed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unevaluated": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baseline_missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "candidate_missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "measured_pairs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "duration_measured_pairs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "input_tokens_measured_pairs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "output_tokens_measured_pairs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cached_input_tokens_measured_pairs": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "planned",
+        "comparable",
+        "improved",
+        "regressed",
+        "unchanged",
+        "unevaluated",
+        "baseline_missing",
+        "candidate_missing",
+        "measured_pairs",
+        "duration_measured_pairs",
+        "input_tokens_measured_pairs",
+        "output_tokens_measured_pairs",
+        "cached_input_tokens_measured_pairs"
+      ]
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "enum": [
+            "allowed_files",
+            "protected_files",
+            "permissions"
+          ]
+        },
+        "baseline": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "candidate": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "change": {
+          "enum": [
+            "improved",
+            "regressed",
+            "unchanged",
+            "unevaluated"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "baseline",
+        "candidate",
+        "change"
+      ]
+    }
+  }
+}

@@ -45,8 +45,26 @@ jobs:
           cache: true
       - run: go test -race ./...
 
+  pilot:
+    name: offline pilot contracts and fixed cases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test event normalization and artifact boundaries
+        run: python3 -m unittest discover -s tools/pilot -p 'test_*.py'
+      - name: Verify frozen initial and golden cases
+        run: python3 tools/pilot/run.py self-test
+
   surface:
-    name: clean-slate surface
+    name: collection and privacy surface
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -62,10 +80,14 @@ jobs:
           test ! -e requirements-dev.txt
           test ! -e scripts/verify.sh
           test ! -e internal/analyze
-          test "$(find schemas -type f | wc -l | tr -d ' ')" = "1"
+          test "$(find schemas -type f | wc -l | tr -d ' ')" = "5"
           test -f schemas/experiment-v1.schema.json
-          ! rg -n 'eval-observation|observations\.jsonl|task_id|supersedes|observe-draft-v2' cmd internal schemas go.mod
-          ! rg -n 'runValidate|runSummarize|runCompare|case "(validate|summarize|compare)"' cmd internal/cli --glob '!**/*_test.go'
+          test -f schemas/suite-v1.schema.json
+          test -f schemas/attempts-v1.schema.json
+          test -f schemas/assessment-v1.schema.json
+          test -f schemas/comparison-v1.schema.json
+          ! rg -n 'eval-observation|observations\.jsonl|observe-draft-v2' cmd internal schemas go.mod
+          ! rg -n 'runValidate|runSummarize|case "(validate|summarize)"' cmd internal/cli --glob '!**/*_test.go'
           ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**'
       - name: Verify legacy privacy quarantine
         shell: bash

@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "attempts-v1.schema.json",
+  "title": "Eval attempts v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "eval-attempts/v1"
+    },
+    "suite_id": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "suite_version": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "suite_digest": {
+      "$ref": "suite-v1.schema.json#/$defs/digest"
+    },
+    "condition": {
+      "$ref": "attempts-v1.schema.json#/$defs/condition"
+    },
+    "environment": {
+      "$ref": "attempts-v1.schema.json#/$defs/environment"
+    },
+    "attempts": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "attempts-v1.schema.json#/$defs/attempt"
+      },
+      "maxItems": 1000
+    }
+  },
+  "required": [
+    "schema",
+    "suite_id",
+    "suite_version",
+    "suite_digest",
+    "condition",
+    "environment",
+    "attempts"
+  ],
+  "$defs": {
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "instruction_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "instruction_digest"
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "reasoning": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "permission_profile": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "environment_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "tool_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        }
+      },
+      "required": [
+        "model",
+        "reasoning",
+        "permission_profile",
+        "environment_digest",
+        "tool_digest"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "manifest": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "tools": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "permissions": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        }
+      },
+      "required": [
+        "manifest",
+        "tools",
+        "permissions"
+      ]
+    },
+    "measurements": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provenance": {
+          "enum": [
+            "host_record",
+            "independent_check",
+            "agent_report",
+            "unavailable"
+          ]
+        },
+        "duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "output_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "cached_input_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "required": [
+        "provenance",
+        "duration_ms",
+        "input_tokens",
+        "output_tokens",
+        "cached_input_tokens"
+      ]
+    },
+    "provenance": {
+      "enum": [
+        "host_record",
+        "independent_check",
+        "agent_report"
+      ]
+    },
+    "status": {
+      "enum": [
+        "pass",
+        "fail",
+        "unavailable",
+        "error"
+      ]
+    },
+    "termination": {
+      "enum": [
+        "completed",
+        "timeout",
+        "interrupted",
+        "agent_error",
+        "environment_error",
+        "authentication_error"
+      ]
+    },
+    "tool": {
+      "enum": [
+        "shell",
+        "file_change",
+        "mcp",
+        "web",
+        "plan",
+        "other"
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "evidence_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "provenance": {
+          "$ref": "attempts-v1.schema.json#/$defs/provenance"
+        },
+        "executor": {
+          "enum": [
+            "agent",
+            "independent"
+          ]
+        },
+        "checker_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "artifact_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "artifact_after_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "status": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        }
+      },
+      "required": [
+        "id",
+        "evidence_id",
+        "provenance",
+        "executor",
+        "checker_digest",
+        "artifact_digest",
+        "artifact_after_digest",
+        "status"
+      ]
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "enum": [
+            "tool_call",
+            "verification",
+            "permission",
+            "observation_gap"
+          ]
+        },
+        "provenance": {
+          "$ref": "attempts-v1.schema.json#/$defs/provenance"
+        },
+        "tool": {
+          "$ref": "attempts-v1.schema.json#/$defs/tool"
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "unknown",
+            "allowed",
+            "denied",
+            "violation"
+          ]
+        },
+        "fingerprint": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "sequence",
+        "kind",
+        "provenance",
+        "status"
+      ]
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "case_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "termination": {
+          "$ref": "attempts-v1.schema.json#/$defs/termination"
+        },
+        "artifact_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "files": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "suite-v1.schema.json#/$defs/file"
+          },
+          "maxItems": 10000
+        },
+        "manifest_provenance": {
+          "$ref": "attempts-v1.schema.json#/$defs/provenance"
+        },
+        "manifest_evidence_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "coverage": {
+          "$ref": "attempts-v1.schema.json#/$defs/coverage"
+        },
+        "checks": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "attempts-v1.schema.json#/$defs/check"
+          },
+          "maxItems": 2000
+        },
+        "events": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "attempts-v1.schema.json#/$defs/event"
+          },
+          "maxItems": 100000
+        },
+        "measurements": {
+          "$ref": "attempts-v1.schema.json#/$defs/measurements"
+        }
+      },
+      "required": [
+        "id",
+        "case_id",
+        "termination",
+        "artifact_digest",
+        "files",
+        "manifest_provenance",
+        "manifest_evidence_id",
+        "coverage",
+        "checks",
+        "events",
+        "measurements"
+      ]
+    }
+  }
+}

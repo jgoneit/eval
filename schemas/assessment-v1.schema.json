@@ -1,0 +1,345 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assessment-v1.schema.json",
+  "title": "Eval assessment v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "eval-assessment/v1"
+    },
+    "evaluator_version": {
+      "const": "rules-v1"
+    },
+    "suite_id": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "suite_version": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "suite_digest": {
+      "$ref": "suite-v1.schema.json#/$defs/digest"
+    },
+    "condition": {
+      "$ref": "attempts-v1.schema.json#/$defs/condition"
+    },
+    "environment": {
+      "$ref": "attempts-v1.schema.json#/$defs/environment"
+    },
+    "provenance_policy": {
+      "const": "declared-not-authenticated"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "assessment-v1.schema.json#/$defs/case"
+      },
+      "maxItems": 1000,
+      "minItems": 1
+    },
+    "summary": {
+      "$ref": "assessment-v1.schema.json#/$defs/summary"
+    }
+  },
+  "required": [
+    "schema",
+    "evaluator_version",
+    "suite_id",
+    "suite_version",
+    "suite_digest",
+    "condition",
+    "environment",
+    "provenance_policy",
+    "cases",
+    "summary"
+  ],
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pass": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fail": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unavailable": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "pass",
+        "fail",
+        "unavailable",
+        "error"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "requirement",
+            "regression"
+          ]
+        },
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "status": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "suite-v1.schema.json#/$defs/token"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "evidence_ids"
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "provenance": {
+          "$ref": "attempts-v1.schema.json#/$defs/provenance"
+        },
+        "kind": {
+          "enum": [
+            "manifest",
+            "check",
+            "tool_call",
+            "verification",
+            "permission",
+            "observation_gap"
+          ]
+        },
+        "criterion_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "tool": {
+          "$ref": "attempts-v1.schema.json#/$defs/tool"
+        },
+        "fingerprint": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "pass",
+            "fail",
+            "unavailable",
+            "error",
+            "succeeded",
+            "failed",
+            "unknown",
+            "allowed",
+            "denied",
+            "violation"
+          ]
+        },
+        "executor": {
+          "enum": [
+            "agent",
+            "independent"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "provenance",
+        "kind"
+      ]
+    },
+    "tool_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "$ref": "attempts-v1.schema.json#/$defs/tool"
+        },
+        "calls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failures": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "repeated_calls": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "tool",
+        "calls",
+        "failures",
+        "repeated_calls"
+      ]
+    },
+    "verification_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "independent": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "agent",
+        "independent"
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "case_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "input_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "criteria_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "attempt_id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "termination": {
+          "enum": [
+            "missing",
+            "completed",
+            "timeout",
+            "interrupted",
+            "agent_error",
+            "environment_error",
+            "authentication_error"
+          ]
+        },
+        "artifact_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "outcome": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "requirements": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "regressions": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "assessment-v1.schema.json#/$defs/finding"
+          }
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "$ref": "assessment-v1.schema.json#/$defs/evidence"
+          }
+        },
+        "process": {
+          "$ref": "attempts-v1.schema.json#/$defs/status"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "assessment-v1.schema.json#/$defs/finding"
+          }
+        },
+        "coverage": {
+          "$ref": "attempts-v1.schema.json#/$defs/coverage"
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "$ref": "assessment-v1.schema.json#/$defs/tool_count"
+          }
+        },
+        "verification": {
+          "$ref": "assessment-v1.schema.json#/$defs/verification_counts"
+        },
+        "measurements": {
+          "$ref": "attempts-v1.schema.json#/$defs/measurements"
+        }
+      },
+      "required": [
+        "case_id",
+        "input_digest",
+        "criteria_digest",
+        "termination",
+        "outcome",
+        "requirements",
+        "regressions",
+        "checks",
+        "evidence",
+        "process",
+        "rules",
+        "coverage",
+        "tools",
+        "verification",
+        "measurements"
+      ]
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "planned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "attempted": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "missing": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "$ref": "assessment-v1.schema.json#/$defs/counts"
+        },
+        "process": {
+          "$ref": "assessment-v1.schema.json#/$defs/counts"
+        }
+      },
+      "required": [
+        "planned",
+        "attempted",
+        "missing",
+        "outcome",
+        "process"
+      ]
+    }
+  }
+}
