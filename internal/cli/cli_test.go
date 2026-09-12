@@ -34,7 +34,7 @@ func TestVersionAndUsageSurface(t *testing.T) {
 	if exit := Run(context.Background(), []string{"--version"}, Runtime{Stdout: &stdout, Stderr: &stderr}); exit != ExitSuccess {
 		t.Fatalf("--version exit = %d", exit)
 	}
-	if got, want := stdout.String(), "evalctl 0.2.0-experiment.1\n"; got != want {
+	if got, want := stdout.String(), "evalctl 0.3.0-experiment.1\n"; got != want {
 		t.Fatalf("--version = %q, want %q", got, want)
 	}
 	for _, args := range [][]string{{}, {"validate"}, {"summarize"}, {"compare"}, {"observe", "extra"}, {"--version", "extra"}} {

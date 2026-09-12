@@ -46,7 +46,7 @@ jobs:
       - run: go test -race ./...
 
   surface:
-    name: clean-slate surface
+    name: collection and privacy surface
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -64,7 +64,7 @@ jobs:
           test ! -e internal/analyze
           test "$(find schemas -type f | wc -l | tr -d ' ')" = "1"
           test -f schemas/experiment-v1.schema.json
-          ! rg -n 'eval-observation|observations\.jsonl|task_id|supersedes|observe-draft-v2' cmd internal schemas go.mod
+          ! rg -n 'eval-observation|observations\.jsonl|observe-draft-v2' cmd internal schemas go.mod
           ! rg -n 'runValidate|runSummarize|runCompare|case "(validate|summarize|compare)"' cmd internal/cli --glob '!**/*_test.go'
           ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**'
       - name: Verify legacy privacy quarantine
