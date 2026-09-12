@@ -1,0 +1,3 @@
+Repair `ParseQuantity(s string) (string, int, error)` in `task.go`.
+
+Accept a nonempty product name followed by whitespace and a decimal quantity in these formats: `product 12` (existing format), `product x12`, `product X 12`, and `product × 12`. A marker and quantity can be adjacent or separated by whitespace. Trim surrounding whitespace and preserve the product name's internal spacing. Quantities must be ASCII decimal integers from 1 through 9999; reject missing names or quantities, negative or zero quantities, fractional quantities, and values beyond the range. Product names in this task do not end with a separate x, X, or × word. Keep the public function signature and package unchanged.
