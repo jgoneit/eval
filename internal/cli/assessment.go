@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/jgoneit/eval/internal/assessment"
 	"github.com/jgoneit/eval/internal/store"
@@ -48,11 +49,12 @@ func runAssessment(ctx context.Context, args []string, rt Runtime) int {
 		return ledgerError(rt, "assessment-canceled", 1)
 	}
 	if command == "compare" {
-		var b, c assessment.Assessment
-		if err := readAssessmentJSON(baseline, &b); err != nil {
+		b, err := readAssessmentRecord(baseline)
+		if err != nil {
 			return assessmentFailure(rt, err)
 		}
-		if err := readAssessmentJSON(candidate, &c); err != nil {
+		c, err := readAssessmentRecord(candidate)
+		if err != nil {
 			return assessmentFailure(rt, err)
 		}
 		comparison, err := assessment.Compare(b, c)
@@ -83,11 +85,19 @@ func runAssessment(ctx context.Context, args []string, rt Runtime) int {
 	if err != nil {
 		return assessmentFailure(rt, err)
 	}
+	inputs, err := json.MarshalIndent(assessment.AssessmentInputs{Schema: assessment.InputsSchema, Suite: s, Attempts: a}, "", "  ")
+	if err != nil {
+		return assessmentFailure(rt, err)
+	}
+	if len(data)+1 > assessment.MaxBytes || len(inputs)+1 > assessment.MaxBytes {
+		return assessmentFailure(rt, assessment.ErrInvalid)
+	}
 	if ctx.Err() != nil {
 		return ledgerError(rt, "assessment-canceled", 1)
 	}
 	commit, err := store.CreateArtifactBundle(out, map[string][]byte{
 		"assessment.json": append(data, '\n'),
+		"inputs.json":     append(inputs, '\n'),
 		"report.md":       []byte(assessment.Markdown(result)),
 	})
 	if !commit.Committed {
@@ -105,6 +115,34 @@ func runAssessment(ctx context.Context, args []string, rt Runtime) int {
 		return 2
 	}
 	return ExitSuccess
+}
+
+// Assessment files and their fixed sibling inputs are one private bundle.
+// Store.Read retains the artifact store's bounded, no-symlink and identity
+// checks without creating state, directories, or lock files.
+func readAssessmentRecord(path string) (assessment.AssessmentRecord, error) {
+	var record assessment.AssessmentRecord
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return record, err
+	}
+	for _, file := range []struct {
+		name   string
+		target any
+	}{{filepath.Base(abs), &record.Assessment}, {"inputs.json", &record.Inputs}} {
+		reader, err := store.New(filepath.Dir(abs), file.name, store.Options{MaxBytes: assessment.MaxBytes})
+		if err != nil {
+			return record, err
+		}
+		data, err := reader.Read()
+		if err != nil {
+			return record, err
+		}
+		if err := assessment.DecodeStrict(data, file.target); err != nil {
+			return record, err
+		}
+	}
+	return record, nil
 }
 
 func readAssessmentJSON(path string, target any) error {

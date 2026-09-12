@@ -28,7 +28,7 @@ func Markdown(a Assessment) string {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s |\n", c.CaseID, measure(c.Measurements.DurationMS), measure(c.Measurements.InputTokens), measure(c.Measurements.OutputTokens), measure(c.Measurements.CachedInputTokens))
 	}
 	for _, c := range a.Cases {
-		fmt.Fprintf(&b, "\n## %s\n\nTool coverage: %s. Manifest coverage: %s. Permission coverage: %s.\n\n", c.CaseID, c.Coverage.Tools, c.Coverage.Manifest, c.Coverage.Permissions)
+		fmt.Fprintf(&b, "\n## %s\n\nTool coverage: %s. Manifest coverage: %s. Permission coverage: %s. Configuration observation: %s.\n\n", c.CaseID, c.Coverage.Tools, c.Coverage.Manifest, c.Coverage.Permissions, c.ConfigurationObservation.Status)
 		b.WriteString("| Kind | Criterion | Status | Evidence IDs |\n| --- | --- | --- | --- |\n")
 		for _, f := range c.Checks {
 			fmt.Fprintf(&b, "| %s | %s | %s | %s |\n", f.Kind, f.ID, f.Status, strings.Join(f.EvidenceIDs, ", "))
@@ -56,11 +56,20 @@ func Markdown(a Assessment) string {
 func ComparisonMarkdown(c Comparison) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Coding assessment comparison\n\nSuite: %s (%s). Baseline: %s. Candidate: %s.\n\n", c.SuiteID, c.SuiteVersion, c.Baseline.ID, c.Candidate.ID)
+	fmt.Fprintf(&b, "Comparison kind: %s.\n\n", c.Kind)
+	if c.Kind == "same_instruction" {
+		b.WriteString("The instruction digests match. Differences describe variation between samples, not an effect of changed instructions.\n\n")
+	}
 	fmt.Fprintf(&b, "Planned: %d; comparable outcomes: %d; improved: %d; regressed: %d; unchanged: %d; unevaluated: %d. Missing baseline: %d; missing candidate: %d.\n\n", c.Summary.Planned, c.Summary.Comparable, c.Summary.Improved, c.Summary.Regressed, c.Summary.Unchanged, c.Summary.Unevaluated, c.Summary.BaselineMissing, c.Summary.CandidateMissing)
-	b.WriteString("Only pairs with completed attempts and pass/fail outcomes count as comparable. Noncompleted attempts have unevaluated outcome and process changes; their findings and observed measurement deltas remain visible. No overall score or automatic winner is selected.\n\n")
+	b.WriteString("Only pairs with completed attempts, pass/fail outcomes, and unchanged configurations matching across the pair count as comparable. Noncompleted attempts or changed/unavailable configurations have unevaluated outcome and process changes; their findings and observed measurement deltas remain visible. No overall score or automatic winner is selected.\n\n")
 	b.WriteString("| Case | Baseline | Candidate | Outcome change | Baseline process | Candidate process | Process change | Baseline termination | Candidate termination |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, r := range c.Cases {
 		fmt.Fprintf(&b, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", r.CaseID, r.Baseline, r.Candidate, r.OutcomeChange, r.BaselineProcess, r.CandidateProcess, r.ProcessChange, r.BaselineTermination, r.CandidateTermination)
+	}
+
+	b.WriteString("\n| Case | Baseline configuration | Candidate configuration | Matching unchanged configuration |\n| --- | --- | --- | --- |\n")
+	for _, r := range c.Cases {
+		fmt.Fprintf(&b, "| %s | %s | %s | %t |\n", r.CaseID, r.BaselineConfiguration, r.CandidateConfiguration, r.ConfigurationComparable)
 	}
 	b.WriteString("\nMeasurement deltas are candidate minus baseline; missing values are unmeasured.\n\n| Case | Observed ms delta | Input token delta | Output token delta | Cached input token delta |\n| --- | ---: | ---: | ---: | ---: |\n")
 	for _, r := range c.Cases {

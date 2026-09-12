@@ -85,6 +85,25 @@ func requiredFields(data []byte, t reflect.Type) error {
 				return ErrInvalid
 			}
 		}
+		// The legacy contract has no configuration field, including an explicit
+		// null. Keep that structural boundary when it shares the v2 Go type.
+		if t == reflect.TypeOf(AttemptSet{}) {
+			var schema string
+			if json.Unmarshal(fields["schema"], &schema) != nil {
+				return ErrInvalid
+			}
+			if schema == LegacyAttemptsSchema {
+				var attempts []map[string]json.RawMessage
+				if json.Unmarshal(fields["attempts"], &attempts) != nil {
+					return ErrInvalid
+				}
+				for _, attempt := range attempts {
+					if _, present := attempt["configuration_observation"]; present {
+						return ErrInvalid
+					}
+				}
+			}
+		}
 	case reflect.Slice:
 		var values []json.RawMessage
 		if json.Unmarshal(data, &values) != nil {

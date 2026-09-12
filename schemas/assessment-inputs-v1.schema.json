@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "assessment-inputs-v1.schema.json",
+  "title": "Eval private assessment inputs v1",
+  "description": "Retained private inputs used to reproduce an assessment; file manifests can contain repository-relative paths.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "eval-assessment-inputs/v1"
+    },
+    "suite": {
+      "$ref": "suite-v1.schema.json"
+    },
+    "attempts": {
+      "oneOf": [
+        {
+          "$ref": "attempts-v1.schema.json"
+        },
+        {
+          "$ref": "attempts-v2.schema.json"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "suite",
+    "attempts"
+  ]
+}
