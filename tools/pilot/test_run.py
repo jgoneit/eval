@@ -156,6 +156,42 @@ class ExecutionTests(unittest.TestCase):
 
 
 class CheckerTests(unittest.TestCase):
+    def test_submitted_api_breaks_are_result_failures(self):
+        sources = {
+            "deleted": b"package task\n",
+            "renamed": b"package task\nfunc Other(items []int, page, size int) ([]int, error) { return nil, nil }\n",
+            "arguments": b"package task\nfunc Page(items []int) ([]int, error) { return nil, nil }\n",
+            "argument_type": b"package task\nfunc Page(items []string, page, size int) ([]int, error) { return nil, nil }\n",
+            "return_count": b"package task\nfunc Page(items []int, page, size int) []int { return nil }\n",
+            "return_type": b'package task\nfunc Page(items []int, page, size int) (string, error) { return "", nil }\n',
+            "syntax": b"package task\nfunc Page(\n",
+        }
+        for name, source in sources.items():
+            with self.subTest(name=name):
+                self.assertEqual(run.run_check("pagination", source, "requirement"), "fail")
+        golden = (run.HERE / "cases/pagination/golden/task.go").read_bytes()
+        self.assertEqual(run.run_check("pagination", golden, "requirement"), "pass")
+
+    def test_fixed_test_error_without_passing_countercheck_stays_error(self):
+        events = [
+            {"Action": "build-output", "ImportPath": "pilotcase [pilotcase.test]", "Output": "./requirements_test.go:21:15: undefined: BROKEN_TEST\n"},
+            {"Action": "build-fail", "ImportPath": "pilotcase [pilotcase.test]"},
+        ]
+        result = subprocess.CompletedProcess("go", 1, b"\n".join(json.dumps(event).encode() for event in events), b"")
+        with mock.patch.object(run.subprocess, "run", return_value=result) as check:
+            self.assertEqual(run.run_check("pagination", b"package task", "requirement"), "error")
+            self.assertEqual(check.call_count, 2)
+
+    def test_unattributed_build_errors_do_not_run_countercheck(self):
+        for path, target in (("./unknown.go", "pilotcase"), ("./task.go", "unrelated"), ("./requirements_test.go", "unrelated")):
+            with self.subTest(path=path, target=target):
+                events = [{"Action": "build-output", "ImportPath": target, "Output": path + ":1:1: compile failure\n"},
+                          {"Action": "build-fail", "ImportPath": target}]
+                result = subprocess.CompletedProcess("go", 1, b"\n".join(json.dumps(event).encode() for event in events), b"")
+                with mock.patch.object(run.subprocess, "run", return_value=result) as check:
+                    self.assertEqual(run.run_check("pagination", b"package task", "requirement"), "error")
+                    self.assertEqual(check.call_count, 1)
+
     def test_changed_checker_workspace_is_error(self):
         def mutate(command, **kwargs):
             (kwargs["cwd"] / "requirements_test.go").write_text("tampered")

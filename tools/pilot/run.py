@@ -136,7 +136,8 @@ def checker_digest(case_id, kind):
     # Bind the exact command, module, and both original test files used to compile.
     data = {"command": check_command(kind), "go_mod": GO_MOD.decode(),
             "requirements": (case / "independent/requirements_test.go").read_text(),
-            "regressions": (case / "independent/regression_test.go").read_text()}
+            "regressions": (case / "independent/regression_test.go").read_text(),
+            "api_failure_countercheck": (case / "golden/task.go").read_text()}
     return sha(canonical(data))
 
 
@@ -239,14 +240,22 @@ def check_command(kind):
 
 
 def run_check(case_id, source, kind):
+    case = HERE / "cases" / case_id / "independent"
+    try:
+        tests = {name: read_regular(case / name) for name in ("requirements_test.go", "regression_test.go")}
+    except (OSError, ValueError):
+        return "error"
+    return _run_check(case_id, source, kind, tests, diagnose_api=True)
+
+
+def _run_check(case_id, source, kind, tests, *, diagnose_api):
     # The candidate's module, tests, and auxiliary source never enter this space.
     with tempfile.TemporaryDirectory(prefix="eval-independent-") as temp:
         root = Path(temp)
         (root / "go.mod").write_bytes(GO_MOD)
         (root / "task.go").write_bytes(source)
-        case = HERE / "cases" / case_id / "independent"
-        for name in ("requirements_test.go", "regression_test.go"):
-            (root / name).write_bytes((case / name).read_bytes())
+        for name, data in tests.items():
+            (root / name).write_bytes(data)
         frozen, _ = manifest(root)
         try:
             process = subprocess.run(check_command(kind), cwd=root, env=go_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=45)
@@ -266,16 +275,30 @@ def run_check(case_id, source, kind):
                 pass
         if process.returncode == 0:
             return "pass" if any(event.get("Action") == "pass" and event.get("Test") == expected_test for event in events) else "error"
-        # Retain only the classification. A local compiler diagnostic attached
-        # to submitted task.go is a result failure; a tool/environment failure
-        # without that evidence remains a checker error.
+        # Retain only classifications. Only compiler records for this fixture
+        # can attribute a build failure to submitted code.
         output = "".join(event.get("Output", "") for event in events if isinstance(event.get("Output", ""), str))
         if "panic: test timed out" in output:
             return "error"
         if any(event.get("Action") == "fail" and event.get("Test") == expected_test for event in events):
             return "fail"
-        if any(event.get("Action") == "build-fail" and event.get("ImportPath") == "pilotcase" for event in events) and re.search(r"(?:^|\n)\./task\.go:[0-9]+:", output):
+        local_targets = ("pilotcase", "pilotcase [pilotcase.test]")
+        failed_targets = {event.get("ImportPath") for event in events if event.get("Action") == "build-fail" and event.get("ImportPath") in local_targets}
+        compiler_output = "".join(event.get("Output", "") for event in events
+                                  if event.get("Action") == "build-output" and event.get("ImportPath") in failed_targets
+                                  and isinstance(event.get("Output", ""), str))
+        if re.search(r"(?:^|\n)\./task\.go:[0-9]+:[0-9]+:", compiler_output):
             return "fail"
+        if diagnose_api and re.search(r"(?:^|\n)\./(?:requirements|regression)_test\.go:[0-9]+:[0-9]+:", compiler_output):
+            # A removed/changed API can fail at a frozen test's call or at use
+            # of its return value. Require a passing golden countercheck under
+            # the same fixed tests; a broken test or environment stays error.
+            try:
+                golden = read_regular(HERE / "cases" / case_id / "golden/task.go")
+            except (OSError, ValueError):
+                return "error"
+            if _run_check(case_id, golden, kind, tests, diagnose_api=False) == "pass":
+                return "fail"
         if any(event.get("Action") == "run" and event.get("Test") == expected_test for event in events) and "panic:" in output:
             return "fail"
         return "error"
