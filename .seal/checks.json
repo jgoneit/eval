@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "checks": [
+    {"name": "go-test", "argv": ["go", "test", "./..."], "required": true, "timeout_seconds": 300},
+    {"name": "go-race", "argv": ["go", "test", "-race", "./..."], "required": true, "timeout_seconds": 300},
+    {"name": "go-vet", "argv": ["go", "vet", "./..."], "required": true, "timeout_seconds": 300},
+    {"name": "go-build", "argv": ["go", "build", "-o", "./bin/evalctl-review", "./cmd/evalctl"], "required": true, "timeout_seconds": 300},
+    {"name": "pilot-tests", "argv": ["python3", "-m", "unittest", "discover", "-s", "tools/pilot", "-p", "test_*.py"], "required": true, "timeout_seconds": 300},
+    {"name": "pilot-fixtures", "argv": ["python3", "tools/pilot/run.py", "self-test"], "required": true, "timeout_seconds": 300}
+  ]
+}
