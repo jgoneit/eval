@@ -242,6 +242,63 @@ func TestGatherSealCompletionRevisionAndBoundaries(t *testing.T) {
 	}
 }
 
+func TestGatherSealCompletionStateAndTimeAgreeBeforeAdmission(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		state       string
+		completedAt any
+		issue       string
+		admitOld    bool
+	}{
+		{name: "absent", state: "absent"},
+		{name: "invalid", state: "invalid"},
+		{name: "new completion", state: "recorded_pass", completedAt: "2026-09-11T10:00:00+09:00", admitOld: true},
+		{name: "old completion", state: "recorded_pass", completedAt: "2026-09-10T23:30:00Z"},
+		{name: "absent with time", state: "absent", completedAt: "2026-09-11T01:00:00Z", issue: "seal_invalid_completion_record"},
+		{name: "invalid with time", state: "invalid", completedAt: "2026-09-11T01:00:00Z", issue: "seal_invalid_completion_record"},
+		{name: "recorded without time", state: "recorded_pass", issue: "seal_invalid_completion_record"},
+		{name: "unknown state", state: "CANARY_PRIVATE_STATE", issue: "seal_invalid_completion_record"},
+		{name: "malformed time", state: "recorded_pass", completedAt: "CANARY_PRIVATE_TIME", issue: "seal_invalid_completion_time"},
+		{name: "future time", state: "recorded_pass", completedAt: "2026-09-11T03:00:00Z", issue: "seal_invalid_completion_time"},
+	} {
+		for _, historical := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/historical=%t", tc.name, historical), func(t *testing.T) {
+				snap, repo, _, _ := gatherFixture(t)
+				file := prepareSeal(t, &snap, repo)
+				fixture := sealFixture()
+				run := fixture["runs"].([]any)[0].(map[string]any)
+				if historical {
+					run["timestamp"] = "2026-09-10T23:00:00Z"
+				}
+				run["completion_record"] = map[string]any{"state": tc.state, "completed_at": tc.completedAt}
+				writeJSON(t, file, fixture)
+				tasks, events, bindings, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+				wantEvents := 0
+				if tc.issue == "" && (!historical || tc.admitOld) {
+					wantEvents = 1
+				}
+				if len(events) != wantEvents || receipt.Complete != (tc.issue == "") {
+					t.Fatalf("events=%+v receipt=%+v", events, receipt)
+				}
+				if tc.issue != "" && !hasIssue(receipt, tc.issue) {
+					t.Fatalf("missing issue %s: %+v", tc.issue, receipt)
+				}
+				if tc.admitOld && len(events) == 1 && *events[0].Seal.CompletionRecord.CompletedAt != "2026-09-11T01:00:00Z" {
+					t.Fatal("completion time was not canonicalized")
+				}
+				report := BuildReport(applyGather(snap, tasks, events, bindings, receipt))
+				if report.Counts.UnderlyingUniqueRuns != wantEvents {
+					t.Fatalf("invalid completion inflated run count: %+v", report.Counts)
+				}
+				if historical && report.Counts.PostActivationRuns != 0 {
+					t.Fatal("completion reclassified a historical invocation")
+				}
+				requirePrivate(t, events, receipt, report)
+			})
+		}
+	}
+}
+
 func TestGatherSealExporterUpgradeDoesNotReviseUnknownProducer(t *testing.T) {
 	snap, repo, _, _ := gatherFixture(t)
 	file := prepareSeal(t, &snap, repo)

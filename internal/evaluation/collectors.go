@@ -865,21 +865,33 @@ func (g *gatherer) collectSeal(repo string) {
 		// A new Completion on an old run is relevant after activation. The underlying
 		// run is retained as historical context and never counted as a new invocation.
 		completedAfterStart := false
-		if run.CompletionRecord.CompletedAt != nil {
+		switch run.CompletionRecord.State {
+		case "absent", "invalid":
+			if run.CompletionRecord.CompletedAt != nil {
+				g.issue(runSource, "seal_invalid_completion_record")
+				continue
+			}
+		case "recorded_pass":
+			if run.CompletionRecord.CompletedAt == nil {
+				g.issue(runSource, "seal_invalid_completion_record")
+				continue
+			}
 			t, e := time.Parse(time.RFC3339Nano, *run.CompletionRecord.CompletedAt)
 			if e != nil || t.After(g.now) {
-				g.issue(source, "seal_invalid_completion_time")
-				run.CompletionRecord.CompletedAt = nil
-			} else {
-				completedAfterStart = !t.Before(g.snap.Experiment.StartedAt)
-				canonical := t.UTC().Format(time.RFC3339Nano)
-				run.CompletionRecord.CompletedAt = &canonical
+				g.issue(runSource, "seal_invalid_completion_time")
+				continue
 			}
+			completedAfterStart = !t.Before(g.snap.Experiment.StartedAt)
+			canonical := t.UTC().Format(time.RFC3339Nano)
+			run.CompletionRecord.CompletedAt = &canonical
+		default:
+			g.issue(runSource, "seal_invalid_completion_record")
+			continue
 		}
 		if at != nil && at.Before(g.snap.Experiment.StartedAt) && !completedAfterStart {
 			continue
 		}
-		if !oneOf(run.MechanicalResult, "pass", "fail") || run.ScopeViolationCount < 0 || !oneOf(run.CompletionRecord.State, "absent", "recorded_pass", "invalid") {
+		if !oneOf(run.MechanicalResult, "pass", "fail") || run.ScopeViolationCount < 0 {
 			g.issue(source, "seal_invalid_result")
 			continue
 		}

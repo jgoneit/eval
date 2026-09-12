@@ -10,3 +10,7 @@
 coverage.out
 /bin/
 /dist/
+
+# Seal acceptance records stay local; the check catalog is product configuration.
+/.seal/tasks/
+/.seal/evidence/

@@ -15,10 +15,12 @@ import (
 // replacing an existing destination. Post-publication failures retain the
 // complete bundle and return Committed with unconfirmed durability.
 func CreateArtifactBundle(directory string, files map[string][]byte) (Commit, error) {
-	return createArtifactBundle(directory, files, Hooks{})
+	return CreateArtifactBundleWithHooks(directory, files, Hooks{})
 }
 
-func createArtifactBundle(directory string, files map[string][]byte, hooks Hooks) (result Commit, retErr error) {
+// CreateArtifactBundleWithHooks preserves the bundle publication contract while
+// allowing callers to check cancellation and inject publication failures.
+func CreateArtifactBundleWithHooks(directory string, files map[string][]byte, hooks Hooks) (result Commit, retErr error) {
 	if len(files) == 0 || len(files) > 32 {
 		return Commit{}, ErrValidation
 	}

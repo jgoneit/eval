@@ -50,7 +50,7 @@ func TestArtifactBundleSecondFileFailureIsInvisibleAndRetryable(t *testing.T) {
 	out := filepath.Join(parent, "export")
 	files := map[string][]byte{"review.json": []byte("{\"reviewer\":\"human\"}\n"), "evidence.md": []byte("private evidence\n")}
 	writes := 0
-	commit, err := createArtifactBundle(out, files, Hooks{WriteTemp: func(file *os.File, content []byte) error {
+	commit, err := CreateArtifactBundleWithHooks(out, files, Hooks{WriteTemp: func(file *os.File, content []byte) error {
 		writes++
 		if _, err := os.Lstat(out); !os.IsNotExist(err) {
 			t.Fatal("partial bundle became visible")
@@ -83,7 +83,7 @@ func TestArtifactBundleSecondFileFailureIsInvisibleAndRetryable(t *testing.T) {
 func TestArtifactBundleDoesNotReplaceRacingEmptyDirectory(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "export")
 	var winner os.FileInfo
-	commit, err := createArtifactBundle(out, map[string][]byte{"review.json": []byte("{}")}, Hooks{BeforeReplace: func(_, target string) error {
+	commit, err := CreateArtifactBundleWithHooks(out, map[string][]byte{"review.json": []byte("{}")}, Hooks{BeforeReplace: func(_, target string) error {
 		if err := createPrivateDir(target); err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func TestArtifactBundleDoesNotReplaceRacingEmptyDirectory(t *testing.T) {
 func TestArtifactBundlePostPublicationFailureRetainsCompleteBundle(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "export")
 	files := map[string][]byte{"review.json": []byte("{}"), "evidence.md": []byte("private")}
-	commit, err := createArtifactBundle(out, files, Hooks{BeforeDirectorySync: func(string) error { return errors.New("sync unavailable") }})
+	commit, err := CreateArtifactBundleWithHooks(out, files, Hooks{BeforeDirectorySync: func(string) error { return errors.New("sync unavailable") }})
 	if err == nil || !commit.Committed || commit.DurabilityConfirmed {
 		t.Fatalf("commit=%+v err=%v", commit, err)
 	}

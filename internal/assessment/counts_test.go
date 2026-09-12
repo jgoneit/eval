@@ -14,7 +14,7 @@ func TestUnavailableChecksDoNotCountAsVerificationAttempts(t *testing.T) {
 	if got := r.Cases[0].Verification; got != (VerificationCounts{}) {
 		t.Fatalf("unavailable assertions counted as execution: %+v", got)
 	}
-	if err := ValidateAssessment(r); err != nil {
+	if err := ValidateAssessment(r, AssessmentInputs{Schema: InputsSchema, Suite: s, Attempts: a}); err != nil {
 		t.Fatal(err)
 	}
 	a.Attempts[0].Events = []Event{{ID: "observed-verification", Sequence: 1, Kind: "verification", Provenance: "host_record", Tool: "shell", Status: "unknown"}}
@@ -22,7 +22,7 @@ func TestUnavailableChecksDoNotCountAsVerificationAttempts(t *testing.T) {
 	if got := r.Cases[0].Verification; got != (VerificationCounts{Agent: 1}) {
 		t.Fatalf("explicit Host verification attempt lost: %+v", got)
 	}
-	if err := ValidateAssessment(r); err != nil {
+	if err := ValidateAssessment(r, AssessmentInputs{Schema: InputsSchema, Suite: s, Attempts: a}); err != nil {
 		t.Fatal(err)
 	}
 	a.Attempts[0].Events[0].ID = agent.EvidenceID

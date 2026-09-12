@@ -168,6 +168,108 @@ func TestUnconfirmedPublicationPreservesUsableExperiment(t *testing.T) {
 	}
 }
 
+func TestInitializationFailureDoesNotPublishPartialExperiment(t *testing.T) {
+	for _, stage := range []string{"first write", "second write", "first file sync", "second file sync", "before publication", "cancel before publication"} {
+		t.Run(stage, func(t *testing.T) {
+			base := t.TempDir()
+			m := Manager{Root: filepath.Join(base, "state")}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			injected := errors.New("injected initialization failure")
+			writes := 0
+			m.Options.Hooks.WriteTemp = func(file *os.File, content []byte) error {
+				writes++
+				if stage == "first write" && writes == 1 || stage == "second write" && writes == 2 {
+					if _, err := file.Write(content[:1]); err != nil {
+						return err
+					}
+					return injected
+				}
+				_, err := file.Write(content)
+				return err
+			}
+			syncs := 0
+			m.Options.Hooks.AfterTempSync = func(string) error {
+				syncs++
+				if stage == "first file sync" && syncs == 1 || stage == "second file sync" && syncs == 2 {
+					return injected
+				}
+				return nil
+			}
+			m.Options.Hooks.BeforeReplace = func(_, target string) error {
+				if _, err := os.Lstat(target); !os.IsNotExist(err) {
+					t.Fatal("partially initialized experiment became visible")
+				}
+				if stage == "cancel before publication" {
+					cancel()
+					return nil
+				}
+				return injected
+			}
+			config := Config{SchemaVersion: 1, Repositories: []string{filepath.Join(base, "repo")}}
+			now := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+			e, commit, err := m.Init(ctx, config, now)
+			if err == nil || commit.Committed || e.ID != "" {
+				t.Fatalf("partial init exposed an ID: %+v %+v %v", e, commit, err)
+			}
+			parent := filepath.Join(m.Root, "jgoneit", "eval-experiment", "v2")
+			entries, err := os.ReadDir(parent)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("init left a partial destination or staging data: %v %v", entries, err)
+			}
+			m.Options.Hooks = store.Hooks{}
+			e, commit, err = m.Init(context.Background(), config, now)
+			if err != nil || !commit.Committed || e.ID == "" {
+				t.Fatalf("fresh initialization failed: %+v %+v %v", e, commit, err)
+			}
+			if _, err := m.Load(e.ID); err != nil {
+				t.Fatalf("published experiment is unusable: %v", err)
+			}
+		})
+	}
+}
+
+func TestInitializationPostPublicationFailureKeepsBothFiles(t *testing.T) {
+	base := t.TempDir()
+	m := Manager{Root: filepath.Join(base, "state"), Options: store.Options{Hooks: store.Hooks{
+		AfterReplace: func(string) error { return errors.New("injected failure after publication") },
+	}}}
+	now := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	e, commit, err := m.Init(context.Background(), Config{SchemaVersion: 1, Repositories: []string{filepath.Join(base, "repo")}}, now)
+	if err == nil || !commit.Committed || commit.DurabilityConfirmed || e.ID == "" {
+		t.Fatalf("published ID was hidden: %+v %+v %v", e, commit, err)
+	}
+	snapshot, err := m.Load(e.ID)
+	if err != nil || snapshot.Experiment.ID != e.ID {
+		t.Fatalf("published experiment lost a file: %+v %v", snapshot, err)
+	}
+}
+
+func TestInitializationNeverReplacesExistingPrivateData(t *testing.T) {
+	base := t.TempDir()
+	m := Manager{Root: filepath.Join(base, "state")}
+	var destination string
+	private := []byte("CANARY_EXISTING_PRIVATE_DATA\n")
+	m.Options.Hooks.BeforeReplace = func(_, target string) error {
+		destination = target
+		if err := os.Mkdir(target, 0700); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(target, "private.jsonl"), private, 0600)
+	}
+	e, commit, err := m.Init(context.Background(), Config{SchemaVersion: 1, Repositories: []string{filepath.Join(base, "repo")}}, time.Now())
+	if err == nil || commit.Committed || e.ID != "" || destination == "" {
+		t.Fatalf("existing private data was accepted: %+v %+v %v", e, commit, err)
+	}
+	got, err := os.ReadFile(filepath.Join(destination, "private.jsonl"))
+	if err != nil || !bytes.Equal(got, private) {
+		t.Fatalf("existing private data changed: %q %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "journal.jsonl")); !os.IsNotExist(err) {
+		t.Fatal("existing incomplete experiment was automatically repaired")
+	}
+}
+
 func TestQuotaStopsBeforePrivatePublication(t *testing.T) {
 	m, e := managerFixture(t)
 	j, p, _ := m.stores(e.ID)

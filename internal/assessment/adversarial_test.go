@@ -21,7 +21,8 @@ func advFixture() (Suite, AttemptSet) {
 	s := Suite{Schema: SuiteSchema, ID: "adversarial", Version: "1", Cases: []Case{c}}
 	files := append([]File(nil), c.InitialFiles...)
 	files[0].Digest = advDigest("f")
-	a := Attempt{ID: "attempt-1", CaseID: c.ID, Termination: "completed", Files: files, ArtifactDigest: DigestFiles(files), ManifestProvenance: "host_record", ManifestEvidenceID: "manifest-1", Coverage: Coverage{Manifest: "complete", Tools: "complete", Permissions: "unavailable"}, Measurements: Measurements{Provenance: "unavailable"}}
+	config := advDigest("6")
+	a := Attempt{ConfigurationObservation: &ConfigurationObservation{Status: "unchanged", ExpectedDigest: &config, BeforeDigest: &config, AfterDigest: &config}, ID: "attempt-1", CaseID: c.ID, Termination: "completed", Files: files, ArtifactDigest: DigestFiles(files), ManifestProvenance: "host_record", ManifestEvidenceID: "manifest-1", Coverage: Coverage{Manifest: "complete", Tools: "complete", Permissions: "unavailable"}, Measurements: Measurements{Provenance: "unavailable"}}
 	for _, criterion := range c.RequiredChecks {
 		a.Checks = append(a.Checks, Check{ID: criterion.ID, EvidenceID: "check-" + criterion.ID, Provenance: "independent_check", Executor: "independent", CheckerDigest: criterion.CheckerDigest, ArtifactDigest: a.ArtifactDigest, ArtifactAfterDigest: a.ArtifactDigest, Status: Pass})
 	}
@@ -35,6 +36,20 @@ func advGrade(t *testing.T, s Suite, attempts AttemptSet) Assessment {
 		t.Fatalf("valid fixture rejected: %v", err)
 	}
 	return r
+}
+
+// advRecord freezes retained inputs before subsequent test mutations.
+func advRecord(t *testing.T, s Suite, attempts AttemptSet) AssessmentRecord {
+	t.Helper()
+	data, err := json.Marshal(AssessmentInputs{Schema: InputsSchema, Suite: s, Attempts: attempts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var inputs AssessmentInputs
+	if err := json.Unmarshal(data, &inputs); err != nil {
+		t.Fatal(err)
+	}
+	return AssessmentRecord{Assessment: advGrade(t, s, attempts), Inputs: inputs}
 }
 
 func advRefreshArtifact(a *Attempt) {
@@ -220,11 +235,11 @@ func TestAdversarialPermissionJudgmentNeedsExplicitHostEvidence(t *testing.T) {
 
 func TestAdversarialUnknownCostNeverBecomesZeroAndReportsAreStable(t *testing.T) {
 	s, a := advFixture()
-	baseline := advGrade(t, s, a)
+	baseline := advRecord(t, s, a)
 	a.Condition = Condition{ID: "candidate", InstructionDigest: advDigest("4")}
 	zero := int64(0)
 	a.Attempts[0].Measurements = Measurements{Provenance: "host_record", DurationMS: &zero, InputTokens: &zero}
-	candidate := advGrade(t, s, a)
+	candidate := advRecord(t, s, a)
 	comparison, err := Compare(baseline, candidate)
 	if err != nil {
 		t.Fatal(err)
@@ -238,7 +253,7 @@ func TestAdversarialUnknownCostNeverBecomesZeroAndReportsAreStable(t *testing.T)
 		t.Fatal(err)
 	}
 	second, _ := json.Marshal(secondComparison)
-	if string(first) != string(second) || ComparisonMarkdown(comparison) != ComparisonMarkdown(secondComparison) || Markdown(baseline) != Markdown(advGrade(t, s, func() AttemptSet { _, original := advFixture(); return original }())) {
+	if string(first) != string(second) || ComparisonMarkdown(comparison) != ComparisonMarkdown(secondComparison) || Markdown(baseline.Assessment) != Markdown(advGrade(t, s, func() AttemptSet { _, original := advFixture(); return original }())) {
 		t.Fatal("same input changed report bytes")
 	}
 	if strings.Contains(string(first), "solution.go") || strings.Contains(string(first), "public_test.go") {
@@ -267,10 +282,10 @@ func TestAdversarialComparisonRejectsChangedCriteriaOrEnvironment(t *testing.T) 
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			s, a := advFixture()
-			baseline := advGrade(t, s, a)
+			baseline := advRecord(t, s, a)
 			a.Condition = Condition{ID: "candidate", InstructionDigest: advDigest("4")}
-			candidate := advGrade(t, s, a)
-			test.mutate(&candidate)
+			candidate := advRecord(t, s, a)
+			test.mutate(&candidate.Assessment)
 			if _, err := Compare(baseline, candidate); err == nil {
 				t.Fatal("accepted incompatible or inconsistent assessment")
 			}
@@ -281,17 +296,17 @@ func TestAdversarialComparisonRejectsChangedCriteriaOrEnvironment(t *testing.T) 
 func TestAdversarialComparisonCannotDiscardRetainedPermissionViolation(t *testing.T) {
 	s, attempts := advFixture()
 	attempts.Attempts[0].Events = []Event{{ID: "violation-1", Sequence: 1, Kind: "permission", Provenance: "host_record", Status: "violation"}}
-	baseline := advGrade(t, s, attempts)
+	baseline := advRecord(t, s, attempts)
 	attempts.Condition = Condition{ID: "candidate", InstructionDigest: advDigest("4")}
-	candidate := advGrade(t, s, attempts)
-	for index := range candidate.Cases[0].Rules {
-		if candidate.Cases[0].Rules[index].ID == "permissions" {
-			candidate.Cases[0].Rules[index].EvidenceIDs = []string{}
-			candidate.Cases[0].Rules[index].Status = Unavailable
+	candidate := advRecord(t, s, attempts)
+	for index := range candidate.Assessment.Cases[0].Rules {
+		if candidate.Assessment.Cases[0].Rules[index].ID == "permissions" {
+			candidate.Assessment.Cases[0].Rules[index].EvidenceIDs = []string{}
+			candidate.Assessment.Cases[0].Rules[index].Status = Unavailable
 		}
 	}
-	candidate.Cases[0].Process = Unavailable
-	candidate.Summary.Process = Counts{Unavailable: 1}
+	candidate.Assessment.Cases[0].Process = Unavailable
+	candidate.Assessment.Summary.Process = Counts{Unavailable: 1}
 	if _, err := Compare(baseline, candidate); err == nil {
 		t.Fatal("omitted retained violation evidence to forge process grade")
 	}
@@ -305,12 +320,12 @@ func TestAdversarialComparisonCannotDropARequiredCheckWithUnchangedDigest(t *tes
 	additional := attempts.Attempts[0].Checks[0]
 	additional.ID, additional.EvidenceID, additional.CheckerDigest = "additional", "additional-evidence", advDigest("8")
 	attempts.Attempts[0].Checks = append(attempts.Attempts[0].Checks, additional)
-	baseline := advGrade(t, s, attempts)
+	baseline := advRecord(t, s, attempts)
 	attempts.Condition = Condition{ID: "candidate", InstructionDigest: advDigest("4")}
-	candidate := advGrade(t, s, attempts)
-	for index, check := range candidate.Cases[0].Checks {
+	candidate := advRecord(t, s, attempts)
+	for index, check := range candidate.Assessment.Cases[0].Checks {
 		if check.ID == "additional" {
-			candidate.Cases[0].Checks = append(candidate.Cases[0].Checks[:index], candidate.Cases[0].Checks[index+1:]...)
+			candidate.Assessment.Cases[0].Checks = append(candidate.Assessment.Cases[0].Checks[:index], candidate.Assessment.Cases[0].Checks[index+1:]...)
 			break
 		}
 	}
@@ -354,7 +369,7 @@ func TestAdversarialComparisonMatchesHandCalculatedFourCasePopulation(t *testing
 		candidateAttempts.Attempts = append(candidateAttempts.Attempts, candidate)
 	}
 	baselineAttempts.SuiteDigest, candidateAttempts.SuiteDigest = DigestSuite(s), DigestSuite(s)
-	comparison, err := Compare(advGrade(t, s, baselineAttempts), advGrade(t, s, candidateAttempts))
+	comparison, err := Compare(advRecord(t, s, baselineAttempts), advRecord(t, s, candidateAttempts))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,12 +413,12 @@ func TestAdversarialNoncompletedAttemptsCannotEstablishStrategyImprovement(t *te
 				attempt.Coverage.Permissions = "complete"
 				attempt.Events = []Event{{ID: "permission-record", Sequence: 1, Kind: "permission", Provenance: "host_record", Status: "denied"}}
 			}
-			baseline, candidate := advGrade(t, s, baselineAttempts), advGrade(t, s, candidateAttempts)
-			if baseline.Cases[0].Outcome != Fail || baseline.Cases[0].Process != Fail || candidate.Cases[0].Outcome != Pass || candidate.Cases[0].Process != Pass {
+			baseline, candidate := advRecord(t, s, baselineAttempts), advRecord(t, s, candidateAttempts)
+			if baseline.Assessment.Cases[0].Outcome != Fail || baseline.Assessment.Cases[0].Process != Fail || candidate.Assessment.Cases[0].Outcome != Pass || candidate.Assessment.Cases[0].Process != Pass {
 				t.Fatal("known findings must remain visible independently of comparison eligibility")
 			}
 			for _, pair := range []struct {
-				baseline, candidate Assessment
+				baseline, candidate AssessmentRecord
 				wantDelta           int64
 			}{{baseline, candidate, 10}, {candidate, baseline, -10}} {
 				comparison, err := Compare(pair.baseline, pair.candidate)
@@ -425,7 +440,7 @@ func TestAdversarialNoncompletedAttemptsCannotEstablishStrategyImprovement(t *te
 				if row.Delta.DurationMS == nil || *row.Delta.DurationMS != pair.wantDelta || summary.DurationMeasuredPairs != 1 {
 					t.Fatal("observed duration lost with performance exclusion")
 				}
-				if row.BaselineTermination != pair.baseline.Cases[0].Termination || row.CandidateTermination != pair.candidate.Cases[0].Termination || row.Baseline != pair.baseline.Cases[0].Outcome || row.Candidate != pair.candidate.Cases[0].Outcome || row.BaselineProcess != pair.baseline.Cases[0].Process || row.CandidateProcess != pair.candidate.Cases[0].Process {
+				if row.BaselineTermination != pair.baseline.Assessment.Cases[0].Termination || row.CandidateTermination != pair.candidate.Assessment.Cases[0].Termination || row.Baseline != pair.baseline.Assessment.Cases[0].Outcome || row.Candidate != pair.candidate.Assessment.Cases[0].Outcome || row.BaselineProcess != pair.baseline.Assessment.Cases[0].Process || row.CandidateProcess != pair.candidate.Assessment.Cases[0].Process {
 					t.Fatal("comparison concealed termination or confirmed findings")
 				}
 			}

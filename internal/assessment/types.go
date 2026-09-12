@@ -3,12 +3,14 @@
 package assessment
 
 const (
-	SuiteSchema      = "eval-suite/v1"
-	AttemptsSchema   = "eval-attempts/v1"
-	AssessmentSchema = "eval-assessment/v1"
-	ComparisonSchema = "eval-comparison/v1"
-	EvaluatorVersion = "rules-v1"
-	MaxBytes         = 64 << 20
+	SuiteSchema          = "eval-suite/v1"
+	LegacyAttemptsSchema = "eval-attempts/v1"
+	AttemptsSchema       = "eval-attempts/v2"
+	InputsSchema         = "eval-assessment-inputs/v1"
+	AssessmentSchema     = "eval-assessment/v2"
+	ComparisonSchema     = "eval-comparison/v2"
+	EvaluatorVersion     = "rules-v2"
+	MaxBytes             = 64 << 20
 )
 
 type Status string
@@ -88,18 +90,28 @@ type Measurements struct {
 	OutputTokens      *int64 `json:"output_tokens"`
 	CachedInputTokens *int64 `json:"cached_input_tokens"`
 }
+
+// ConfigurationObservation records controller observations, not which settings
+// an Agent actually loaded. Missing legacy evidence remains unavailable.
+type ConfigurationObservation struct {
+	Status         string  `json:"status"`
+	ExpectedDigest *string `json:"expected_digest"`
+	BeforeDigest   *string `json:"before_digest"`
+	AfterDigest    *string `json:"after_digest"`
+}
 type Attempt struct {
-	ID                 string       `json:"id"`
-	CaseID             string       `json:"case_id"`
-	Termination        string       `json:"termination"`
-	ArtifactDigest     string       `json:"artifact_digest"`
-	Files              []File       `json:"files"`
-	ManifestProvenance string       `json:"manifest_provenance"`
-	ManifestEvidenceID string       `json:"manifest_evidence_id"`
-	Coverage           Coverage     `json:"coverage"`
-	Checks             []Check      `json:"checks"`
-	Events             []Event      `json:"events"`
-	Measurements       Measurements `json:"measurements"`
+	ConfigurationObservation *ConfigurationObservation `json:"configuration_observation,omitempty"`
+	ID                       string                    `json:"id"`
+	CaseID                   string                    `json:"case_id"`
+	Termination              string                    `json:"termination"`
+	ArtifactDigest           string                    `json:"artifact_digest"`
+	Files                    []File                    `json:"files"`
+	ManifestProvenance       string                    `json:"manifest_provenance"`
+	ManifestEvidenceID       string                    `json:"manifest_evidence_id"`
+	Coverage                 Coverage                  `json:"coverage"`
+	Checks                   []Check                   `json:"checks"`
+	Events                   []Event                   `json:"events"`
+	Measurements             Measurements              `json:"measurements"`
 }
 type AttemptSet struct {
 	Schema       string      `json:"schema"`
@@ -109,6 +121,18 @@ type AttemptSet struct {
 	Condition    Condition   `json:"condition"`
 	Environment  Environment `json:"environment"`
 	Attempts     []Attempt   `json:"attempts"`
+}
+
+// AssessmentInputs are private: manifests can contain repository-relative paths.
+// They must never be emitted as an aggregate assessment or comparison.
+type AssessmentInputs struct {
+	Schema   string     `json:"schema"`
+	Suite    Suite      `json:"suite"`
+	Attempts AttemptSet `json:"attempts"`
+}
+type AssessmentRecord struct {
+	Assessment Assessment
+	Inputs     AssessmentInputs
 }
 type Evidence struct {
 	CriterionID string `json:"criterion_id,omitempty"`
@@ -144,23 +168,24 @@ type VerificationCounts struct {
 	Independent int `json:"independent"`
 }
 type CaseAssessment struct {
-	CaseID         string             `json:"case_id"`
-	InputDigest    string             `json:"input_digest"`
-	CriteriaDigest string             `json:"criteria_digest"`
-	AttemptID      string             `json:"attempt_id,omitempty"`
-	Termination    string             `json:"termination"`
-	ArtifactDigest string             `json:"artifact_digest,omitempty"`
-	Outcome        Status             `json:"outcome"`
-	Requirements   Status             `json:"requirements"`
-	Regressions    Status             `json:"regressions"`
-	Checks         []Finding          `json:"checks"`
-	Evidence       []Evidence         `json:"evidence"`
-	Process        Status             `json:"process"`
-	Rules          []Finding          `json:"rules"`
-	Coverage       Coverage           `json:"coverage"`
-	Tools          []ToolCount        `json:"tools"`
-	Verification   VerificationCounts `json:"verification"`
-	Measurements   Measurements       `json:"measurements"`
+	ConfigurationObservation ConfigurationObservation `json:"configuration_observation"`
+	CaseID                   string                   `json:"case_id"`
+	InputDigest              string                   `json:"input_digest"`
+	CriteriaDigest           string                   `json:"criteria_digest"`
+	AttemptID                string                   `json:"attempt_id,omitempty"`
+	Termination              string                   `json:"termination"`
+	ArtifactDigest           string                   `json:"artifact_digest,omitempty"`
+	Outcome                  Status                   `json:"outcome"`
+	Requirements             Status                   `json:"requirements"`
+	Regressions              Status                   `json:"regressions"`
+	Checks                   []Finding                `json:"checks"`
+	Evidence                 []Evidence               `json:"evidence"`
+	Process                  Status                   `json:"process"`
+	Rules                    []Finding                `json:"rules"`
+	Coverage                 Coverage                 `json:"coverage"`
+	Tools                    []ToolCount              `json:"tools"`
+	Verification             VerificationCounts       `json:"verification"`
+	Measurements             Measurements             `json:"measurements"`
 }
 type Summary struct {
 	Planned   int    `json:"planned"`
@@ -170,6 +195,7 @@ type Summary struct {
 	Process   Counts `json:"process"`
 }
 type Assessment struct {
+	InputsDigest     string           `json:"inputs_digest"`
 	Schema           string           `json:"schema"`
 	EvaluatorVersion string           `json:"evaluator_version"`
 	SuiteID          string           `json:"suite_id"`
@@ -194,17 +220,20 @@ type RuleComparison struct {
 	Change    string `json:"change"`
 }
 type CaseComparison struct {
-	BaselineProcess      Status           `json:"baseline_process"`
-	CandidateProcess     Status           `json:"candidate_process"`
-	Rules                []RuleComparison `json:"rules"`
-	CaseID               string           `json:"case_id"`
-	Baseline             Status           `json:"baseline"`
-	Candidate            Status           `json:"candidate"`
-	OutcomeChange        string           `json:"outcome_change"`
-	ProcessChange        string           `json:"process_change"`
-	BaselineTermination  string           `json:"baseline_termination"`
-	CandidateTermination string           `json:"candidate_termination"`
-	Delta                MeasurementDelta `json:"delta"`
+	BaselineConfiguration   string           `json:"baseline_configuration"`
+	CandidateConfiguration  string           `json:"candidate_configuration"`
+	ConfigurationComparable bool             `json:"configuration_comparable"`
+	BaselineProcess         Status           `json:"baseline_process"`
+	CandidateProcess        Status           `json:"candidate_process"`
+	Rules                   []RuleComparison `json:"rules"`
+	CaseID                  string           `json:"case_id"`
+	Baseline                Status           `json:"baseline"`
+	Candidate               Status           `json:"candidate"`
+	OutcomeChange           string           `json:"outcome_change"`
+	ProcessChange           string           `json:"process_change"`
+	BaselineTermination     string           `json:"baseline_termination"`
+	CandidateTermination    string           `json:"candidate_termination"`
+	Delta                   MeasurementDelta `json:"delta"`
 }
 type ComparisonSummary struct {
 	Planned                        int `json:"planned"`
@@ -222,6 +251,7 @@ type ComparisonSummary struct {
 	CachedInputTokensMeasuredPairs int `json:"cached_input_tokens_measured_pairs"`
 }
 type Comparison struct {
+	Kind             string            `json:"kind"`
 	Schema           string            `json:"schema"`
 	EvaluatorVersion string            `json:"evaluator_version"`
 	SuiteID          string            `json:"suite_id"`

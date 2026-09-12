@@ -20,11 +20,13 @@ func TestStoredRowSchemaRemainsSeparateFromAssessmentSchemas(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		"experiment-v1.schema.json": true,
-		"suite-v1.schema.json":      true,
-		"attempts-v1.schema.json":   true,
-		"assessment-v1.schema.json": true,
-		"comparison-v1.schema.json": true,
+		"experiment-v1.schema.json":        true,
+		"suite-v1.schema.json":             true,
+		"attempts-v1.schema.json":          true,
+		"attempts-v2.schema.json":          true,
+		"assessment-inputs-v1.schema.json": true,
+		"assessment-v2.schema.json":        true,
+		"comparison-v2.schema.json":        true,
 	}
 	if len(entries) != len(want) {
 		t.Fatalf("schema entries = %v", entries)

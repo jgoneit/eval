@@ -3,11 +3,19 @@ package assessment
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 )
 
 func hash(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeToString(h[:]) }
+
+// DigestInputs binds the typed, compact JSON input to the derived assessment.
+// This checksum establishes consistency; it does not authenticate a producer.
+func DigestInputs(inputs AssessmentInputs) string {
+	data, _ := json.Marshal(inputs)
+	return hash(InputsSchema + "\n" + string(data))
+}
 
 // DigestFiles hashes sorted path/digest pairs using a versioned newline format.
 // Callers must validate manifests before treating this consistency digest as evidence.

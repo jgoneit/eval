@@ -62,6 +62,87 @@ jobs:
         run: python3 -m unittest discover -s tools/pilot -p 'test_*.py'
       - name: Verify frozen initial and golden cases
         run: python3 tools/pilot/run.py self-test
+      - name: Install contract validator
+        run: python3 -m pip install 'jsonschema==4.25.1'
+      - name: Validate schemas and generated assessment contracts
+        shell: bash
+        run: |
+          go build -o "$RUNNER_TEMP/evalctl" ./cmd/evalctl
+          python3 - <<'PY'
+          import copy
+          import json
+          import os
+          from pathlib import Path
+          import subprocess
+          import sys
+          import tempfile
+          from jsonschema import validators
+          from referencing import Registry, Resource
+
+          sys.path.insert(0, "tools/pilot")
+          import run
+
+          expected = {
+              "experiment-v1.schema.json", "suite-v1.schema.json",
+              "attempts-v1.schema.json", "attempts-v2.schema.json",
+              "assessment-inputs-v1.schema.json", "assessment-v2.schema.json",
+              "comparison-v2.schema.json",
+          }
+          paths = list(Path("schemas").glob("*.json"))
+          assert {path.name for path in paths} == expected
+          schemas = {path.name: json.loads(path.read_text()) for path in paths}
+          registry = Registry().with_resources(
+              (schema["$id"], Resource.from_contents(schema)) for schema in schemas.values()
+          )
+          for schema in schemas.values():
+              validators.validator_for(schema).check_schema(schema)
+
+          def validate(name, value):
+              schema = schemas[name]
+              validators.validator_for(schema)(schema, registry=registry).validate(value)
+
+          suite = run.build_suite()
+          validate("suite-v1.schema.json", suite)
+          digest = "a" * 64
+          attempts = {
+              "schema": "eval-attempts/v2", "suite_id": suite["id"],
+              "suite_version": suite["version"], "suite_digest": run.suite_digest(suite),
+              "condition": {"id": "baseline", "instruction_digest": digest},
+              "environment": {"model": "contract-fixture", "reasoning": "high",
+                  "permission_profile": "unavailable", "environment_digest": digest, "tool_digest": digest},
+              "attempts": [{
+                  "id": "fixture-1", "case_id": suite["cases"][0]["id"],
+                  "termination": "environment_error", "artifact_digest": suite["cases"][0]["input_digest"],
+                  "files": suite["cases"][0]["initial_files"],
+                  "manifest_provenance": "agent_report", "manifest_evidence_id": "fixture-manifest",
+                  "coverage": {"manifest": "unavailable", "tools": "unavailable", "permissions": "unavailable"},
+                  "checks": [], "events": [],
+                  "measurements": {"provenance": "unavailable", "duration_ms": None,
+                      "input_tokens": None, "output_tokens": None, "cached_input_tokens": None},
+                  "configuration_observation": {"status": "unchanged", "expected_digest": digest,
+                      "before_digest": digest, "after_digest": digest},
+              }],
+          }
+          validate("attempts-v2.schema.json", attempts)
+          legacy = copy.deepcopy(attempts)
+          legacy["schema"] = "eval-attempts/v1"
+          del legacy["attempts"][0]["configuration_observation"]
+          validate("attempts-v1.schema.json", legacy)
+          binary = str(Path(os.environ["RUNNER_TEMP"]) / "evalctl")
+          with tempfile.TemporaryDirectory() as directory:
+              root = Path(directory)
+              (root / "suite.json").write_text(json.dumps(suite))
+              for label, value in (("baseline", attempts), ("candidate", legacy)):
+                  (root / f"{label}.json").write_text(json.dumps(value))
+                  subprocess.run([binary, "assess", "--suite", str(root / "suite.json"),
+                      "--attempts", str(root / f"{label}.json"), "--out", str(root / label)], check=True)
+                  for filename, schema in (("assessment.json", "assessment-v2.schema.json"),
+                                           ("inputs.json", "assessment-inputs-v1.schema.json")):
+                      validate(schema, json.loads((root / label / filename).read_text()))
+              comparison = subprocess.check_output([binary, "compare", "--baseline",
+                  str(root / "baseline/assessment.json"), "--candidate", str(root / "candidate/assessment.json")])
+              validate("comparison-v2.schema.json", json.loads(comparison))
+          PY
 
   surface:
     name: collection and privacy surface
@@ -80,15 +161,16 @@ jobs:
           test ! -e requirements-dev.txt
           test ! -e scripts/verify.sh
           test ! -e internal/analyze
-          test "$(find schemas -type f | wc -l | tr -d ' ')" = "5"
           test -f schemas/experiment-v1.schema.json
           test -f schemas/suite-v1.schema.json
           test -f schemas/attempts-v1.schema.json
-          test -f schemas/assessment-v1.schema.json
-          test -f schemas/comparison-v1.schema.json
+          test -f schemas/attempts-v2.schema.json
+          test -f schemas/assessment-inputs-v1.schema.json
+          test -f schemas/assessment-v2.schema.json
+          test -f schemas/comparison-v2.schema.json
           ! rg -n 'eval-observation|observations\.jsonl|observe-draft-v2' cmd internal schemas go.mod
           ! rg -n 'runValidate|runSummarize|case "(validate|summarize)"' cmd internal/cli --glob '!**/*_test.go'
-          ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**'
+          ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**' --glob '!.seal/tasks/**' --glob '!.seal/evidence/**'
       - name: Verify legacy privacy quarantine
         shell: bash
         run: |
@@ -98,4 +180,10 @@ jobs:
           test -z "$(git ls-files -- observations.jsonl reports/private)"
           git check-ignore --quiet observations.jsonl
           git check-ignore --quiet reports/private/canary.jsonl
+          mkdir -p .seal/tasks .seal/evidence
+          printf '%s\n' canary > .seal/tasks/privacy-canary.json
+          printf '%s\n' canary > .seal/evidence/privacy-canary.json
+          test -z "$(git ls-files -- .seal/tasks .seal/evidence)"
+          git check-ignore --quiet .seal/tasks/privacy-canary.json
+          git check-ignore --quiet .seal/evidence/privacy-canary.json
           test -z "$(git add --dry-run -A)"

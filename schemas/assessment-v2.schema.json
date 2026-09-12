@@ -1,15 +1,15 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "assessment-v1.schema.json",
-  "title": "Eval assessment v1",
+  "$id": "assessment-v2.schema.json",
+  "title": "Eval assessment v2",
   "type": "object",
   "additionalProperties": false,
   "properties": {
     "schema": {
-      "const": "eval-assessment/v1"
+      "const": "eval-assessment/v2"
     },
     "evaluator_version": {
-      "const": "rules-v1"
+      "const": "rules-v2"
     },
     "suite_id": {
       "$ref": "suite-v1.schema.json#/$defs/token"
@@ -21,10 +21,10 @@
       "$ref": "suite-v1.schema.json#/$defs/digest"
     },
     "condition": {
-      "$ref": "attempts-v1.schema.json#/$defs/condition"
+      "$ref": "attempts-v2.schema.json#/$defs/condition"
     },
     "environment": {
-      "$ref": "attempts-v1.schema.json#/$defs/environment"
+      "$ref": "attempts-v2.schema.json#/$defs/environment"
     },
     "provenance_policy": {
       "const": "declared-not-authenticated"
@@ -32,13 +32,16 @@
     "cases": {
       "type": "array",
       "items": {
-        "$ref": "assessment-v1.schema.json#/$defs/case"
+        "$ref": "assessment-v2.schema.json#/$defs/case"
       },
       "maxItems": 1000,
       "minItems": 1
     },
     "summary": {
-      "$ref": "assessment-v1.schema.json#/$defs/summary"
+      "$ref": "assessment-v2.schema.json#/$defs/summary"
+    },
+    "inputs_digest": {
+      "$ref": "suite-v1.schema.json#/$defs/digest"
     }
   },
   "required": [
@@ -51,7 +54,8 @@
     "environment",
     "provenance_policy",
     "cases",
-    "summary"
+    "summary",
+    "inputs_digest"
   ],
   "$defs": {
     "counts": {
@@ -96,7 +100,7 @@
           "$ref": "suite-v1.schema.json#/$defs/token"
         },
         "status": {
-          "$ref": "attempts-v1.schema.json#/$defs/status"
+          "$ref": "attempts-v2.schema.json#/$defs/status"
         },
         "evidence_ids": {
           "type": "array",
@@ -119,7 +123,7 @@
           "$ref": "suite-v1.schema.json#/$defs/token"
         },
         "provenance": {
-          "$ref": "attempts-v1.schema.json#/$defs/provenance"
+          "$ref": "attempts-v2.schema.json#/$defs/provenance"
         },
         "kind": {
           "enum": [
@@ -135,7 +139,7 @@
           "$ref": "suite-v1.schema.json#/$defs/token"
         },
         "tool": {
-          "$ref": "attempts-v1.schema.json#/$defs/tool"
+          "$ref": "attempts-v2.schema.json#/$defs/tool"
         },
         "fingerprint": {
           "$ref": "suite-v1.schema.json#/$defs/digest"
@@ -176,7 +180,7 @@
       "additionalProperties": false,
       "properties": {
         "tool": {
-          "$ref": "attempts-v1.schema.json#/$defs/tool"
+          "$ref": "attempts-v2.schema.json#/$defs/tool"
         },
         "calls": {
           "type": "integer",
@@ -247,49 +251,52 @@
           "$ref": "suite-v1.schema.json#/$defs/digest"
         },
         "outcome": {
-          "$ref": "attempts-v1.schema.json#/$defs/status"
+          "$ref": "attempts-v2.schema.json#/$defs/status"
         },
         "requirements": {
-          "$ref": "attempts-v1.schema.json#/$defs/status"
+          "$ref": "attempts-v2.schema.json#/$defs/status"
         },
         "regressions": {
-          "$ref": "attempts-v1.schema.json#/$defs/status"
+          "$ref": "attempts-v2.schema.json#/$defs/status"
         },
         "checks": {
           "type": "array",
           "items": {
-            "$ref": "assessment-v1.schema.json#/$defs/finding"
+            "$ref": "assessment-v2.schema.json#/$defs/finding"
           }
         },
         "evidence": {
           "type": "array",
           "items": {
-            "$ref": "assessment-v1.schema.json#/$defs/evidence"
+            "$ref": "assessment-v2.schema.json#/$defs/evidence"
           }
         },
         "process": {
-          "$ref": "attempts-v1.schema.json#/$defs/status"
+          "$ref": "attempts-v2.schema.json#/$defs/status"
         },
         "rules": {
           "type": "array",
           "items": {
-            "$ref": "assessment-v1.schema.json#/$defs/finding"
+            "$ref": "assessment-v2.schema.json#/$defs/finding"
           }
         },
         "coverage": {
-          "$ref": "attempts-v1.schema.json#/$defs/coverage"
+          "$ref": "attempts-v2.schema.json#/$defs/coverage"
         },
         "tools": {
           "type": "array",
           "items": {
-            "$ref": "assessment-v1.schema.json#/$defs/tool_count"
+            "$ref": "assessment-v2.schema.json#/$defs/tool_count"
           }
         },
         "verification": {
-          "$ref": "assessment-v1.schema.json#/$defs/verification_counts"
+          "$ref": "assessment-v2.schema.json#/$defs/verification_counts"
         },
         "measurements": {
-          "$ref": "attempts-v1.schema.json#/$defs/measurements"
+          "$ref": "attempts-v2.schema.json#/$defs/measurements"
+        },
+        "configuration_observation": {
+          "$ref": "attempts-v2.schema.json#/$defs/configuration_observation"
         }
       },
       "required": [
@@ -307,7 +314,8 @@
         "coverage",
         "tools",
         "verification",
-        "measurements"
+        "measurements",
+        "configuration_observation"
       ]
     },
     "summary": {
@@ -327,10 +335,10 @@
           "minimum": 0
         },
         "outcome": {
-          "$ref": "assessment-v1.schema.json#/$defs/counts"
+          "$ref": "assessment-v2.schema.json#/$defs/counts"
         },
         "process": {
-          "$ref": "assessment-v1.schema.json#/$defs/counts"
+          "$ref": "assessment-v2.schema.json#/$defs/counts"
         }
       },
       "required": [

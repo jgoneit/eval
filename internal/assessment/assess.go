@@ -9,6 +9,7 @@ func Assess(s Suite, a AttemptSet) (Assessment, error) {
 		return Assessment{}, err
 	}
 	r := Assessment{Schema: AssessmentSchema, EvaluatorVersion: EvaluatorVersion, SuiteID: s.ID, SuiteVersion: s.Version, SuiteDigest: DigestSuite(s), Condition: a.Condition, Environment: a.Environment, ProvenancePolicy: "declared-not-authenticated", Cases: []CaseAssessment{}}
+	r.InputsDigest = DigestInputs(AssessmentInputs{Schema: InputsSchema, Suite: s, Attempts: a})
 	attempts := map[string]Attempt{}
 	for _, v := range a.Attempts {
 		attempts[v.CaseID] = v
@@ -28,6 +29,9 @@ func Assess(s Suite, a AttemptSet) (Assessment, error) {
 }
 
 func emptyMeasurements() Measurements { return Measurements{Provenance: "unavailable"} }
+func unavailableConfiguration() ConfigurationObservation {
+	return ConfigurationObservation{Status: "unavailable"}
+}
 func missingCoverage() Coverage {
 	return Coverage{Manifest: "unavailable", Tools: "unavailable", Permissions: "unavailable"}
 }
@@ -73,6 +77,7 @@ func outcome(requirements, regressions Status, termination string) Status {
 }
 func assessCase(c Case, a *Attempt) CaseAssessment {
 	r := CaseAssessment{CaseID: c.ID, InputDigest: c.InputDigest, CriteriaDigest: c.CriteriaDigest, Termination: "missing", Outcome: Unavailable, Requirements: Unavailable, Regressions: Unavailable, Checks: []Finding{}, Evidence: []Evidence{}, Process: Unavailable, Rules: []Finding{}, Coverage: missingCoverage(), Tools: []ToolCount{}, Measurements: emptyMeasurements()}
+	r.ConfigurationObservation = unavailableConfiguration()
 	checks := append([]CheckCriterion(nil), c.RequiredChecks...)
 	sort.Slice(checks, func(i, j int) bool { return checks[i].ID < checks[j].ID })
 	for _, criterion := range checks {
@@ -94,6 +99,9 @@ func assessCase(c Case, a *Attempt) CaseAssessment {
 		r.Rules = append(r.Rules, Finding{ID: id, Status: Unavailable, EvidenceIDs: []string{}})
 	}
 	if a != nil {
+		if a.ConfigurationObservation != nil {
+			r.ConfigurationObservation = *a.ConfigurationObservation
+		}
 		r.AttemptID = a.ID
 		r.Termination = a.Termination
 		r.ArtifactDigest = a.ArtifactDigest

@@ -72,7 +72,7 @@ func TestAssessmentCLIPrivateReproducibleBundleAndCompare(t *testing.T) {
 			t.Fatalf("bad publication receipt %s", receipt)
 		}
 	}
-	for _, name := range []string{"assessment.json", "report.md"} {
+	for _, name := range []string{"assessment.json", "report.md", "inputs.json"} {
 		first, err := os.ReadFile(filepath.Join(outputs[0], name))
 		if err != nil {
 			t.Fatal(err)
@@ -81,8 +81,19 @@ func TestAssessmentCLIPrivateReproducibleBundleAndCompare(t *testing.T) {
 		if err != nil || !bytes.Equal(first, second) {
 			t.Fatalf("non-reproducible %s: %v", name, err)
 		}
-		if bytes.Contains(first, []byte("path-canary")) || bytes.Contains(first, []byte(base)) {
+		if (name != "inputs.json" && bytes.Contains(first, []byte("path-canary"))) || bytes.Contains(first, []byte(base)) {
 			t.Fatalf("path disclosed in %s", name)
+		}
+		if name == "inputs.json" {
+			var inputs assessment.AssessmentInputs
+			if assessment.DecodeStrict(first, &inputs) != nil || inputs.Schema != assessment.InputsSchema || !bytes.Contains(first, []byte("path-canary")) {
+				t.Fatal("private input evidence was not retained")
+			}
+			var result assessment.Assessment
+			data, err := os.ReadFile(filepath.Join(outputs[0], "assessment.json"))
+			if err != nil || assessment.DecodeStrict(data, &result) != nil || assessment.ValidateAssessment(result, inputs) != nil {
+				t.Fatalf("retained evidence does not reproduce assessment: %v", err)
+			}
 		}
 		if runtime.GOOS != "windows" {
 			info, err := os.Stat(filepath.Join(outputs[0], name))
@@ -116,6 +127,98 @@ func TestAssessmentCLIPrivateReproducibleBundleAndCompare(t *testing.T) {
 	_, second = invokeAssessmentCLI(t, args...)
 	if code != 0 || len(data) == 0 || !bytes.Equal(data, second) {
 		t.Fatal("comparison Markdown not reproducible")
+	}
+	if bytes.Contains(data, []byte("path-canary")) || bytes.Contains(data, []byte(base)) {
+		t.Fatal("comparison disclosed private input paths")
+	}
+}
+
+func TestCompareRequiresMatchingPrivateInputs(t *testing.T) {
+	for _, scenario := range []string{"missing", "different-inputs", "changed-result", "forged-manifest-findings", "legacy-result", "symlink", "symlink-parent"} {
+		t.Run(scenario, func(t *testing.T) {
+			base := t.TempDir()
+			suite, attempts := assessmentCLIInput()
+			if scenario == "forged-manifest-findings" {
+				digest := strings.Repeat("a", 64)
+				files := append([]assessment.File(nil), suite.Cases[0].InitialFiles...)
+				files[1].Digest = strings.Repeat("b", 64)
+				attempts.Attempts = []assessment.Attempt{{
+					ID: "attempt-one", CaseID: suite.Cases[0].ID, Termination: "completed",
+					Files: files, ArtifactDigest: assessment.DigestFiles(files),
+					ManifestProvenance: "host_record", ManifestEvidenceID: "manifest-one",
+					Coverage: assessment.Coverage{Manifest: "complete", Tools: "unavailable", Permissions: "unavailable"},
+					Checks:   []assessment.Check{}, Events: []assessment.Event{}, Measurements: assessment.Measurements{Provenance: "unavailable"},
+					ConfigurationObservation: &assessment.ConfigurationObservation{Status: "unchanged", ExpectedDigest: &digest, BeforeDigest: &digest, AfterDigest: &digest},
+				}}
+			}
+			suitePath, attemptsPath := filepath.Join(base, "suite.json"), filepath.Join(base, "attempts.json")
+			writeAssessmentInput(t, suitePath, suite)
+			writeAssessmentInput(t, attemptsPath, attempts)
+			out := filepath.Join(base, "bundle")
+			code, receipt := invokeAssessmentCLI(t, "assess", "--suite", suitePath, "--attempts", attemptsPath, "--out", out)
+			if code != 0 && code != 2 {
+				t.Fatalf("assess: %d %s", code, receipt)
+			}
+			resultPath, inputsPath := filepath.Join(out, "assessment.json"), filepath.Join(out, "inputs.json")
+			switch scenario {
+			case "missing":
+				if err := os.Remove(inputsPath); err != nil {
+					t.Fatal(err)
+				}
+			case "different-inputs":
+				attempts.Condition.InstructionDigest = strings.Repeat("b", 64)
+				writeAssessmentInput(t, inputsPath, assessment.AssessmentInputs{Schema: assessment.InputsSchema, Suite: suite, Attempts: attempts})
+			case "changed-result", "forged-manifest-findings", "legacy-result":
+				var result assessment.Assessment
+				if err := readAssessmentJSON(resultPath, &result); err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "changed-result" {
+					result.Condition.InstructionDigest = strings.Repeat("b", 64)
+				} else if scenario == "forged-manifest-findings" {
+					if result.Cases[0].Process != assessment.Fail {
+						t.Fatal("protected-file fixture did not fail process grading")
+					}
+					for i := range result.Cases[0].Rules {
+						if result.Cases[0].Rules[i].ID != "permissions" {
+							result.Cases[0].Rules[i].Status = assessment.Pass
+						}
+					}
+					result.Cases[0].Process = assessment.Unavailable
+					result.Summary.Process = assessment.Counts{Unavailable: 1}
+				} else {
+					result.Schema = "eval-assessment/v1"
+				}
+				writeAssessmentInput(t, resultPath, result)
+			case "symlink":
+				privatePath := filepath.Join(base, "private-path-canary.json")
+				if err := os.Rename(inputsPath, privatePath); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(privatePath, inputsPath); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+			case "symlink-parent":
+				link := filepath.Join(base, "private-path-canary")
+				if err := os.Symlink(out, link); err != nil {
+					t.Skipf("symlink unavailable: %v", err)
+				}
+				resultPath = filepath.Join(link, "assessment.json")
+			}
+			code, data := invokeAssessmentCLI(t, "compare", "--baseline", resultPath, "--candidate", resultPath)
+			if code != 1 || bytes.Contains(data, []byte("canary")) || bytes.Contains(data, []byte(base)) {
+				t.Fatalf("accepted unverifiable bundle or leaked paths: %d %s", code, data)
+			}
+			entries, err := os.ReadDir(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if strings.HasSuffix(entry.Name(), ".lock") {
+					t.Fatal("read-only comparison created a lock")
+				}
+			}
+		})
 	}
 }
 

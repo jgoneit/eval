@@ -216,8 +216,34 @@ func validateAttempt(a Attempt, c Case) error {
 	}
 	return nil
 }
+
+func validateConfiguration(c ConfigurationObservation) error {
+	if !oneOf(c.Status, "unchanged", "changed", "unavailable") {
+		return ErrInvalid
+	}
+	complete := true
+	for _, value := range []*string{c.ExpectedDigest, c.BeforeDigest, c.AfterDigest} {
+		if value == nil {
+			complete = false
+		} else if !digest(*value) {
+			return ErrInvalid
+		}
+	}
+	expected := "unavailable"
+	if complete {
+		expected = "changed"
+		if *c.ExpectedDigest == *c.BeforeDigest && *c.BeforeDigest == *c.AfterDigest {
+			expected = "unchanged"
+		}
+	}
+	if c.Status != expected {
+		return ErrInvalid
+	}
+	return nil
+}
+
 func validateInputs(s Suite, a AttemptSet) error {
-	if validateSuite(s) != nil || a.Schema != AttemptsSchema || a.SuiteID != s.ID || a.SuiteVersion != s.Version || a.SuiteDigest != DigestSuite(s) || validateCondition(a.Condition) != nil || validateEnvironment(a.Environment) != nil || len(a.Attempts) > len(s.Cases) {
+	if validateSuite(s) != nil || !oneOf(a.Schema, AttemptsSchema, LegacyAttemptsSchema) || a.SuiteID != s.ID || a.SuiteVersion != s.Version || a.SuiteDigest != DigestSuite(s) || validateCondition(a.Condition) != nil || validateEnvironment(a.Environment) != nil || len(a.Attempts) > len(s.Cases) {
 		return ErrInvalid
 	}
 	cases := map[string]Case{}
@@ -226,7 +252,23 @@ func validateInputs(s Suite, a AttemptSet) error {
 	}
 	ids := map[string]bool{}
 	used := map[string]bool{}
+	var expectedConfiguration *string
 	for _, attempt := range a.Attempts {
+		if a.Schema == LegacyAttemptsSchema {
+			if attempt.ConfigurationObservation != nil {
+				return ErrInvalid
+			}
+		} else {
+			if attempt.ConfigurationObservation == nil || validateConfiguration(*attempt.ConfigurationObservation) != nil {
+				return ErrInvalid
+			}
+			if expected := attempt.ConfigurationObservation.ExpectedDigest; expected != nil {
+				if expectedConfiguration != nil && *expectedConfiguration != *expected {
+					return ErrInvalid
+				}
+				expectedConfiguration = expected
+			}
+		}
 		c, ok := cases[attempt.CaseID]
 		if !ok || ids[attempt.ID] || used[attempt.CaseID] || validateAttempt(attempt, c) != nil {
 			return ErrInvalid
