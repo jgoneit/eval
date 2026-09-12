@@ -49,6 +49,8 @@ func Run(ctx context.Context, args []string, runtime Runtime) int {
 	}
 	if len(args) > 0 {
 		switch args[0] {
+		case "assess", "compare":
+			return runAssessment(ctx, args, runtime)
 		case "experiment", "collect", "review", "report":
 			return runEvaluation(ctx, args, runtime)
 		}
@@ -168,6 +170,8 @@ func usage(writer io.Writer) {
 	_, _ = fmt.Fprintln(writer, "       evalctl review export --experiment ID --out DIR [--state-root ABS]")
 	_, _ = fmt.Fprintln(writer, "       evalctl review apply --experiment ID --file FILE [--state-root ABS]")
 	_, _ = fmt.Fprintln(writer, "       evalctl report --experiment ID --format json|markdown [--state-root ABS]")
+	_, _ = fmt.Fprintln(writer, "       evalctl assess --suite FILE --attempts FILE --out DIR")
+	_, _ = fmt.Fprintln(writer, "       evalctl compare --baseline FILE --candidate FILE --format json|markdown")
 }
 
 func defaults(runtime Runtime) Runtime {

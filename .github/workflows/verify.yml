@@ -62,10 +62,14 @@ jobs:
           test ! -e requirements-dev.txt
           test ! -e scripts/verify.sh
           test ! -e internal/analyze
-          test "$(find schemas -type f | wc -l | tr -d ' ')" = "1"
+          test "$(find schemas -type f | wc -l | tr -d ' ')" = "5"
           test -f schemas/experiment-v1.schema.json
+          test -f schemas/suite-v1.schema.json
+          test -f schemas/attempts-v1.schema.json
+          test -f schemas/assessment-v1.schema.json
+          test -f schemas/comparison-v1.schema.json
           ! rg -n 'eval-observation|observations\.jsonl|observe-draft-v2' cmd internal schemas go.mod
-          ! rg -n 'runValidate|runSummarize|runCompare|case "(validate|summarize|compare)"' cmd internal/cli --glob '!**/*_test.go'
+          ! rg -n 'runValidate|runSummarize|case "(validate|summarize)"' cmd internal/cli --glob '!**/*_test.go'
           ! rg -n '/Users/[[:alnum:]_.-]+/' . --hidden --glob '!.git/**'
       - name: Verify legacy privacy quarantine
         shell: bash

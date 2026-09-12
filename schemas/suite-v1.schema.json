@@ -1,0 +1,146 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "suite-v1.schema.json",
+  "title": "Eval suite v1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "eval-suite/v1"
+    },
+    "id": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "version": {
+      "$ref": "suite-v1.schema.json#/$defs/token"
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "$ref": "suite-v1.schema.json#/$defs/case"
+      },
+      "maxItems": 1000,
+      "minItems": 1
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "version",
+    "cases"
+  ],
+  "$defs": {
+    "token": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:+-]{0,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "path": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^(?!.*(?:^|/)(?:\\.|\\.\\.)(?:/|$))[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$"
+    },
+    "file": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "$ref": "suite-v1.schema.json#/$defs/path"
+        },
+        "digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        }
+      },
+      "required": [
+        "path",
+        "digest"
+      ]
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "kind": {
+          "enum": [
+            "requirement",
+            "regression"
+          ]
+        },
+        "checker_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "checker_digest"
+      ]
+    },
+    "case": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "suite-v1.schema.json#/$defs/token"
+        },
+        "input_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "criteria_digest": {
+          "$ref": "suite-v1.schema.json#/$defs/digest"
+        },
+        "initial_files": {
+          "type": "array",
+          "items": {
+            "$ref": "suite-v1.schema.json#/$defs/file"
+          },
+          "maxItems": 10000,
+          "minItems": 1
+        },
+        "allowed_files": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "suite-v1.schema.json#/$defs/path"
+          },
+          "maxItems": 10000
+        },
+        "protected_files": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "suite-v1.schema.json#/$defs/path"
+          },
+          "maxItems": 10000
+        },
+        "required_checks": {
+          "type": "array",
+          "items": {
+            "$ref": "suite-v1.schema.json#/$defs/check"
+          },
+          "maxItems": 1000,
+          "minItems": 2
+        }
+      },
+      "required": [
+        "id",
+        "input_digest",
+        "criteria_digest",
+        "initial_files",
+        "allowed_files",
+        "protected_files",
+        "required_checks"
+      ]
+    }
+  }
+}
