@@ -2,6 +2,7 @@ package evaluation
 
 import (
 	"math"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -210,20 +211,24 @@ func TestComparisonValidationEnforcesCohortsAndPairedTimings(t *testing.T) {
 
 func TestPrivateReviewPacketCanLinkSources(t *testing.T) {
 	s := reviewFixture()
-	s.Experiment.Config.SessionDirs = []string{"/private"}
-	s.Bindings = []Binding{{ID: "private-task-id", Kind: "session", Reference: "/private/source-session.jsonl"}}
+	privateRoot := filepath.Join(filepath.VolumeName(t.TempDir())+string(filepath.Separator), "private")
+	reference := filepath.Join(privateRoot, "source-session.jsonl")
+	s.Experiment.Config.SessionDirs = []string{privateRoot}
+	s.Bindings = []Binding{{ID: "private-task-id", Kind: "session", Reference: reference}}
 	r, err := ReviewTemplate(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(ReviewMarkdown(s, r), "/private/source-session.jsonl") {
+	if !strings.Contains(ReviewMarkdown(s, r), filepath.ToSlash(reference)) {
 		t.Fatal("private reviewer cannot locate source")
 	}
 }
 
 func TestPrivateReviewPacketIdentifiesExactSealRunWithEncodedLocalLinks(t *testing.T) {
 	s := reviewFixture()
-	repository := "/private/review project (alpha)"
+	privateRoot := filepath.Join(filepath.VolumeName(t.TempDir())+string(filepath.Separator), "private")
+	repository := filepath.Join(privateRoot, "review project (alpha)")
+	encodedRepository := filepath.ToSlash(privateRoot) + "/review%20project%20%28alpha%29"
 	s.Experiment.Config.Repositories = []string{repository}
 	e := addTestEvent(&s, "event", "seal", "pass")
 	e.SourceID = "source-alias"
@@ -236,7 +241,7 @@ func TestPrivateReviewPacketIdentifiesExactSealRunWithEncodedLocalLinks(t *testi
 	}
 	r := reviewWith(s, unknownIncident("incident", 1, "seal", []string{e.ID}))
 	md := ReviewMarkdown(s, r)
-	for _, want := range []string{"source-alias", e.EvidenceSHA256, "Task `TASK-1`, Run `RUN-1`", "[Run manifest](</private/review%20project%20%28alpha%29/.seal/evidence/TASK-1/RUN-1/run-manifest.json>)", "[saved Task](</private/review%20project%20%28alpha%29/.seal/tasks/TASK-1.json>)"} {
+	for _, want := range []string{"source-alias", e.EvidenceSHA256, "Task `TASK-1`, Run `RUN-1`", "[Run manifest](<" + encodedRepository + "/.seal/evidence/TASK-1/RUN-1/run-manifest.json>)", "[saved Task](<" + encodedRepository + "/.seal/tasks/TASK-1.json>)"} {
 		if !strings.Contains(md, want) {
 			t.Fatalf("private packet missing %q:\n%s", want, md)
 		}
