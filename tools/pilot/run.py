@@ -47,7 +47,7 @@ def config_path():
 
 def config_fingerprints(path):
     """Hash all settings, including notice/security keys; retain no values."""
-    content = read_regular(path) if path.is_file() else b""
+    content = read_regular(path)
     try:
         parsed = tomllib.loads(content.decode())
     except (ValueError, UnicodeError):
@@ -66,6 +66,34 @@ def config_fingerprints(path):
     normalized = normalize(parsed)
     return {"byte_digest": sha(content), "canonical_digest": sha(canonical(normalized)),
             "top_level_digests": {key: sha(canonical(value)) for key, value in sorted(normalized.items())}}
+
+
+def config_byte_digest(path):
+    """Missing/unreadable bytes are unavailable, not an empty configuration."""
+    try:
+        return sha(read_regular(path))
+    except (OSError, ValueError):
+        return None
+
+
+def configuration_observation(expected, before, after):
+    values = (expected, before, after)
+    status = "unavailable" if any(value is None for value in values) else "unchanged" if len(set(values)) == 1 else "changed"
+    return {"status": status, "expected_digest": expected, "before_digest": before, "after_digest": after}
+
+
+def retain_configuration_gap(root, configuration, observation, stage, path):
+    diagnostic = {"schema": "eval-pilot-configuration/v1", "stage": stage,
+                  "configuration_observation": observation, "before": configuration}
+    try:
+        current = config_fingerprints(path)
+    except (OSError, ValueError):
+        current = None
+    if current is not None and current["byte_digest"] != observation["after_digest"]:
+        current = None  # Do not label a later, different read as the observed end state.
+    diagnostic["after"] = current
+    diagnostic["canonical_changed"] = None if current is None else configuration["canonical_digest"] != current["canonical_digest"]
+    write_private(root / "configuration-drift.json", canonical(diagnostic))
 
 
 def catalog_capability(data, model, reasoning):
@@ -586,7 +614,8 @@ def preflight(codex, model="gpt-5.5", reasoning="xhigh", include_fixtures=True):
     return result
 
 
-def attempt_record(case, condition, root, codex, model, reasoning, timeout):
+def attempt_record(case, condition, root, codex, model, reasoning, timeout, *,
+                   configuration_path=None, expected_config_digest=None, before_config_digest=None):
     attempt_id = condition + "-" + case["id"] + "-1"
     workspace = root / "workers" / attempt_id
     workspace.mkdir(mode=0o700, parents=True)
@@ -623,7 +652,10 @@ def attempt_record(case, condition, root, codex, model, reasoning, timeout):
                        "provenance": "independent_check", "executor": "independent", "checker_digest": criterion["checker_digest"],
                        "artifact_digest": files_digest(before_files), "artifact_after_digest": files_digest(after_files), "status": status})
     usage = normalizer.usage or {}
+    observation = configuration_observation(expected_config_digest, before_config_digest,
+                                            config_byte_digest(configuration_path) if configuration_path is not None else None)
     attempt = {"id": attempt_id, "case_id": case["id"], "termination": termination,
+               "configuration_observation": observation,
                "artifact_digest": artifact_digest, "files": files, "manifest_provenance": "host_record",
                "manifest_evidence_id": attempt_id + "-manifest", "coverage": {"manifest": coverage, "tools": ("partial" if normalizer.gaps else "complete") if normalizer.thread_started else "unavailable", "permissions": "unavailable"},
                "checks": checks, "events": normalizer.events,
@@ -632,6 +664,7 @@ def attempt_record(case, condition, root, codex, model, reasoning, timeout):
     write_private(retained / "attempt.json", canonical(attempt))
     write_private(retained / "runner.json", canonical({"schema": "eval-pilot-attempt/v1", "attempt_id": attempt_id,
                                                         "termination": termination, "failure_reason": normalizer.failure_reason,
+                                                        "configuration_observation": observation,
                                                         "agent_activity_observed": normalizer.agent_activity,
                                                         "thread_started_observed": normalizer.thread_started,
                                                         "permission_profile": {"requested": "workspace-write", "effective": "unavailable"}}))
@@ -660,7 +693,7 @@ def run_pilot(args):
     # Configuration bytes are hashed, never copied or printed. Both conditions
     # inherit the same local configuration, and changes abort remaining runs.
     configuration_path = config_path()
-    configuration = config_fingerprints(configuration_path)
+    configuration = setup["configuration"]
     config_digest = configuration["byte_digest"]
     env_facts = {key: setup[key] for key in ("go_version", "platform", "architecture")}
     env_facts.update({"codex_config_digest": config_digest, "configuration": configuration,
@@ -669,22 +702,28 @@ def run_pilot(args):
     environment = {"model": args.model, "reasoning": args.reasoning, "permission_profile": "workspace-write",
                    "environment_digest": sha(canonical(env_facts)), "tool_digest": sha(canonical({key: setup[key] for key in ("codex_version", "codex_digest", "harness_digest")}))}
     write_private(root / "environment.json", canonical({"environment": environment, "facts": env_facts}))
-    sets = {condition: {"schema": "eval-attempts/v1", "suite_id": suite["id"], "suite_version": suite["version"], "suite_digest": suite_digest(suite),
+    sets = {condition: {"schema": "eval-attempts/v2", "suite_id": suite["id"], "suite_version": suite["version"], "suite_digest": suite_digest(suite),
                         "condition": {"id": condition, "instruction_digest": sha((COMMON + (CANDIDATE if condition == "candidate" else "")).encode())},
                         "environment": environment, "attempts": []} for condition in ("baseline", "candidate")}
     abort_reason = None
     try:
         for case in suite["cases"]:
             for condition in ("baseline", "candidate"):
-                current = config_fingerprints(configuration_path)
-                if current["byte_digest"] != config_digest:
-                    write_private(root / "configuration-drift.json", canonical({"before": configuration, "after": current,
-                                                                                "canonical_changed": configuration["canonical_digest"] != current["canonical_digest"]}))
-                    raise ValueError("configuration_changed_no_retry")
+                before_digest = config_byte_digest(configuration_path)
+                if before_digest != config_digest:
+                    observation = configuration_observation(config_digest, before_digest, before_digest)
+                    retain_configuration_gap(root, configuration, observation, "before_attempt", configuration_path)
+                    raise ValueError("configuration_unavailable_no_retry" if before_digest is None else "configuration_changed_no_retry")
                 print(json.dumps({"status": "starting", "case_id": case["id"], "condition": condition}), flush=True)
-                attempt = attempt_record(case, condition, root, args.codex, args.model, args.reasoning, args.timeout)
+                attempt = attempt_record(case, condition, root, args.codex, args.model, args.reasoning, args.timeout,
+                                         configuration_path=configuration_path, expected_config_digest=config_digest,
+                                         before_config_digest=before_digest)
                 sets[condition]["attempts"].append(attempt)
                 print(json.dumps({"status": "finished", "case_id": case["id"], "condition": condition, "termination": attempt["termination"], "checks": {check["id"]: check["status"] for check in attempt["checks"]}}), flush=True)
+                observation = attempt["configuration_observation"]
+                if observation["status"] != "unchanged":
+                    retain_configuration_gap(root, configuration, observation, "after_attempt", configuration_path)
+                    raise ValueError("configuration_unavailable_no_retry" if observation["status"] == "unavailable" else "configuration_changed_no_retry")
                 if attempt["termination"] == "interrupted":
                     raise ValueError("run_interrupted_no_retry")
     except KeyboardInterrupt:

@@ -217,28 +217,102 @@ class CheckerTests(unittest.TestCase):
 
 
 class RetentionTests(unittest.TestCase):
-    def test_config_drift_preserves_first_attempt_and_missing_denominator(self):
+    def run_with_configuration_change(self, attempt_number, delete=False):
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp).resolve()
+            config = parent / "config.toml"
+            config.write_text('model="CANARY_CONFIGURATION"')
+            expected_digest = run.sha(config.read_bytes())
+            setup = {"status": "ready", "codex_version": "test", "go_version": "test", "platform": "test", "architecture": "test", "codex_digest": run.sha(b"test"), "harness_digest": run.sha(b"test"),
+                     "configuration": run.config_fingerprints(config)}
+            executed = []
+
+            def worker(command, workspace, prompt, timeout):
+                executed.append(workspace)
+                if len(executed) == attempt_number:
+                    if delete:
+                        config.unlink()
+                    else:
+                        config.write_text('model="CANARY_CHANGED"')
+                normalizer = run.Normalizer()
+                normalizer.thread_started = True
+                normalizer.agent_activity = True
+                return normalizer, "completed", 11
+
+            args = Namespace(codex="codex", out=str(parent / "run"), model="model", reasoning="ultra", timeout=300)
+            reason = "configuration_unavailable_no_retry" if delete else "configuration_changed_no_retry"
+            with mock.patch.dict(os.environ, {"CODEX_HOME": str(parent)}), mock.patch.object(run, "preflight", return_value=setup), mock.patch.object(run, "self_test", return_value=[]), mock.patch.object(run, "execute_worker", side_effect=worker), mock.patch.object(run, "run_check", return_value="pass"), mock.patch("builtins.print"):
+                with self.assertRaisesRegex(ValueError, reason):
+                    run.run_pilot(args)
+            receipt = json.loads((parent / "run/run.json").read_text())
+            self.assertEqual((receipt["planned"], receipt["attempted"], receipt["missing"]), (6, attempt_number, 6 - attempt_number))
+            self.assertEqual(receipt["abort_reason"], reason)
+            self.assertEqual(receipt["automatic_retries"], 0)
+            self.assertEqual(len(executed), attempt_number)
+            attempts = []
+            for condition in ("baseline", "candidate"):
+                data = json.loads((parent / "run" / (condition + "-attempts.json")).read_text())
+                self.assertEqual(data["schema"], "eval-attempts/v2")
+                attempts.extend(data["attempts"])
+            changed = [attempt for attempt in attempts if attempt["configuration_observation"]["status"] != "unchanged"]
+            self.assertEqual(len(changed), 1)
+            for attempt in attempts:
+                self.assertEqual(attempt["termination"], "completed")
+                self.assertEqual(attempt["measurements"]["duration_ms"], 11)
+                self.assertIsNone(attempt["measurements"]["input_tokens"])
+                retained = parent / "run/evidence" / attempt["id"]
+                self.assertEqual(json.loads((retained / "attempt.json").read_text()), attempt)
+                self.assertEqual(json.loads((retained / "runner.json").read_text())["configuration_observation"], attempt["configuration_observation"])
+            observation = changed[0]["configuration_observation"]
+            self.assertEqual(observation, {"status": "unavailable" if delete else "changed", "expected_digest": expected_digest,
+                                           "before_digest": expected_digest, "after_digest": None if delete else run.sha(config.read_bytes())})
+            self.assertTrue((parent / "run/snapshot/cases/pagination/independent/requirements_test.go").is_file())
+            diagnostic = json.loads((parent / "run/configuration-drift.json").read_text())
+            self.assertEqual(diagnostic["stage"], "after_attempt")
+            self.assertEqual(diagnostic["configuration_observation"], observation)
+            self.assertEqual(diagnostic["canonical_changed"], None if delete else True)
+            self.assertNotIn("CANARY", json.dumps({"attempts": attempts, "diagnostic": diagnostic, "receipt": receipt}))
+
+    def test_first_and_last_attempt_configuration_changes_are_retained(self):
+        for attempt_number in (1, 6):
+            with self.subTest(attempt_number=attempt_number):
+                self.run_with_configuration_change(attempt_number)
+
+    def test_first_and_last_attempt_configuration_deletion_is_unavailable(self):
+        for attempt_number in (1, 6):
+            with self.subTest(attempt_number=attempt_number):
+                self.run_with_configuration_change(attempt_number, delete=True)
+
+    def test_change_since_preflight_aborts_before_first_worker(self):
         with tempfile.TemporaryDirectory() as temp:
             parent = Path(temp).resolve()
             config = parent / "config.toml"
             config.write_text('model="initial"')
-            setup = {"status": "ready", "codex_version": "test", "go_version": "test", "platform": "test", "architecture": "test", "codex_digest": run.sha(b"test"), "harness_digest": run.sha(b"test")}
-            def record(case, condition, *args):
-                config.write_text('model="changed"')
-                return {"id": "first", "case_id": case["id"], "termination": "completed", "checks": []}
+            setup = {"status": "ready", "codex_version": "test", "go_version": "test", "platform": "test", "architecture": "test", "codex_digest": run.sha(b"test"), "harness_digest": run.sha(b"test"),
+                     "configuration": run.config_fingerprints(config)}
+            config.write_text('model="changed"')
             args = Namespace(codex="codex", out=str(parent / "run"), model="model", reasoning="ultra", timeout=300)
-            with mock.patch.dict(os.environ, {"CODEX_HOME": str(parent)}), mock.patch.object(run, "preflight", return_value=setup), mock.patch.object(run, "self_test", return_value=[]), mock.patch.object(run, "attempt_record", side_effect=record):
+            with mock.patch.dict(os.environ, {"CODEX_HOME": str(parent)}), mock.patch.object(run, "preflight", return_value=setup), mock.patch.object(run, "self_test", return_value=[]), mock.patch.object(run, "execute_worker") as worker:
                 with self.assertRaisesRegex(ValueError, "configuration_changed_no_retry"):
                     run.run_pilot(args)
+                worker.assert_not_called()
             receipt = json.loads((parent / "run/run.json").read_text())
-            self.assertEqual((receipt["planned"], receipt["attempted"], receipt["missing"]), (6, 1, 5))
-            self.assertEqual(len(json.loads((parent / "run/baseline-attempts.json").read_text())["attempts"]), 1)
-            self.assertEqual(json.loads((parent / "run/candidate-attempts.json").read_text())["attempts"], [])
-            self.assertTrue((parent / "run/snapshot/cases/pagination/independent/requirements_test.go").is_file())
-            self.assertTrue(json.loads((parent / "run/configuration-drift.json").read_text())["canonical_changed"])
+            self.assertEqual((receipt["attempted"], receipt["missing"]), (0, 6))
+            self.assertEqual(json.loads((parent / "run/configuration-drift.json").read_text())["stage"], "before_attempt")
 
 
 class PreflightTests(unittest.TestCase):
+    def test_missing_configuration_is_not_empty_configuration(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "config.toml"
+            with self.assertRaises(OSError):
+                run.config_fingerprints(path)
+            self.assertIsNone(run.config_byte_digest(path))
+            path.write_bytes(b"")
+            self.assertEqual(run.config_byte_digest(path), run.sha(b""))
+            with mock.patch.object(run, "read_regular", side_effect=PermissionError("CANARY")):
+                self.assertIsNone(run.config_byte_digest(path))
+
     def test_model_and_effort_must_be_in_live_catalog(self):
         catalog = {"models": [{"slug": "gpt-5.5", "base_instructions": "CANARY", "supported_reasoning_levels": [{"effort": "high"}, {"effort": "xhigh"}]}]}
         capability = run.catalog_capability(catalog, "gpt-5.5", "xhigh")
