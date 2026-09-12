@@ -45,6 +45,24 @@ jobs:
           cache: true
       - run: go test -race ./...
 
+  pilot:
+    name: offline pilot contracts and fixed cases
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test event normalization and artifact boundaries
+        run: python3 -m unittest discover -s tools/pilot -p 'test_*.py'
+      - name: Verify frozen initial and golden cases
+        run: python3 tools/pilot/run.py self-test
+
   surface:
     name: collection and privacy surface
     runs-on: ubuntu-latest
