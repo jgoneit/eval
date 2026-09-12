@@ -148,6 +148,9 @@ func appendLine(existing []byte, v any) ([]byte, error) {
 }
 
 func (m Manager) Init(ctx context.Context, c Config, now time.Time) (Experiment, store.Commit, error) {
+	if err := ctx.Err(); err != nil {
+		return Experiment{}, store.Commit{}, err
+	}
 	if err := ValidateConfig(c); err != nil {
 		return Experiment{}, store.Commit{}, err
 	}
@@ -170,28 +173,33 @@ func (m Manager) Init(ctx context.Context, c Config, now time.Time) (Experiment,
 	if int64(len(pb))+int64(len(jb)) > MaxBytes {
 		return Experiment{}, store.Commit{}, ErrFull
 	}
-	j, p, err := m.stores(id)
+	j, _, err := m.stores(id)
 	if err != nil {
 		return Experiment{}, store.Commit{}, err
 	}
-	pc, err := p.Update(ctx, func(old []byte) ([]byte, error) {
-		if len(old) != 0 {
-			return nil, ErrInvalid
+	// Publish both files together: readers must never observe a private manifest
+	// without its initial journal. Existing destinations are never repaired.
+	hooks := m.Options.Hooks
+	beforeReplace := hooks.BeforeReplace
+	hooks.BeforeReplace = func(staging, target string) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		return pb, nil
-	})
-	if !pc.Committed {
-		return Experiment{}, pc, err
+		if beforeReplace != nil {
+			if err := beforeReplace(staging, target); err != nil {
+				return err
+			}
+		}
+		return ctx.Err()
 	}
-	// A later successful sync of this same directory confirms both publications.
-	// Windows can publish without supporting directory durability confirmation.
-	jc, err := j.Update(ctx, func(old []byte) ([]byte, error) {
-		if len(old) != 0 {
-			return nil, ErrInvalid
-		}
-		return jb, nil
-	})
-	return e, jc, err
+	commit, err := store.CreateArtifactBundleWithHooks(filepath.Dir(j.Path()), map[string][]byte{
+		"private.jsonl": pb,
+		"journal.jsonl": jb,
+	}, hooks)
+	if !commit.Committed {
+		return Experiment{}, commit, err
+	}
+	return e, commit, err
 }
 
 func lines(data []byte, visit func([]byte) error) error {
