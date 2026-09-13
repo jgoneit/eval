@@ -30,13 +30,14 @@ const (
 
 var publicVersion = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$`)
 var sourceIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$`)
+var sealIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 var sha256Digest = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
 // Gather reads only registered sources. It returns an append-only delta; the
 // caller commits facts and private bindings together under the store lock.
 // An incomplete source never silently becomes an empty, successful collection.
 func Gather(ctx context.Context, snap Snapshot, now time.Time) (tasks []Task, events []Event, bindings []Binding, receipt Receipt) {
-	g := &gatherer{ctx: ctx, snap: snap, now: now.UTC(), aliases: map[string]Binding{}, taskByRaw: map[string]string{}, allTasks: map[string]Task{}, latest: map[string]Event{}, reviewedSources: map[string]bool{}, seenThisPass: map[string]bool{}, issues: map[string]bool{}}
+	g := &gatherer{ctx: ctx, snap: snap, now: now.UTC(), aliases: map[string]Binding{}, taskByRaw: map[string]string{}, allTasks: map[string]Task{}, latest: map[string]Event{}, reviewedSources: map[string]bool{}, seenThisPass: map[string]bool{}, seenSealDigests: map[string]string{}, issues: map[string]bool{}}
 	g.receipt = Receipt{Schema: Schema, ExperimentID: snap.Experiment.ID, CollectedAt: g.now, Complete: true, Issues: []Issue{}}
 	for _, b := range snap.Bindings {
 		g.aliases[b.Kind+"\x00"+b.Key] = b
@@ -112,6 +113,7 @@ type gatherer struct {
 	latest          map[string]Event
 	reviewedSources map[string]bool
 	seenThisPass    map[string]bool
+	seenSealDigests map[string]string
 	issues          map[string]bool
 	tasks           []Task
 	events          []Event
@@ -708,7 +710,7 @@ type sealExport struct {
 	Complete        bool   `json:"scan_complete"`
 	Tasks           []struct {
 		TaskID string `json:"task_id"`
-	} `json:"tasks,omitempty"`
+	} `json:"tasks"`
 	Runs []struct {
 		TaskID              string      `json:"task_id"`
 		RunID               string      `json:"run_id"`
@@ -809,7 +811,7 @@ func (g *gatherer) collectSeal(repo string) {
 	}
 	for _, issue := range export.Issues {
 		issueSource := source
-		if issue.TaskID != nil && issue.RunID != nil && sourceIdentifier.MatchString(*issue.TaskID) && sourceIdentifier.MatchString(*issue.RunID) {
+		if issue.TaskID != nil && issue.RunID != nil && sealIdentifier.MatchString(*issue.TaskID) && sealIdentifier.MatchString(*issue.RunID) {
 			key := filepath.Clean(repo) + "\x00" + *issue.TaskID + "\x00" + *issue.RunID
 			issueSource = g.alias("seal_run", key, repo)
 		}
@@ -823,18 +825,31 @@ func (g *gatherer) collectSeal(repo string) {
 		g.issue(source, "seal_invalid_exporter_version")
 	}
 	for _, task := range export.Tasks {
-		if !sourceIdentifier.MatchString(task.TaskID) {
+		if !sealIdentifier.MatchString(task.TaskID) {
 			g.issue(source, "seal_invalid_identity")
 			continue
 		}
 		g.alias("seal_task", filepath.Clean(repo)+"\x00"+task.TaskID, repo)
 	}
 	for _, run := range export.Runs {
-		if !sourceIdentifier.MatchString(run.TaskID) || !sourceIdentifier.MatchString(run.RunID) || !sha256Digest.MatchString(run.EvidenceSHA256) {
+		if !sealIdentifier.MatchString(run.TaskID) || !sealIdentifier.MatchString(run.RunID) || !sha256Digest.MatchString(run.EvidenceSHA256) {
 			g.issue(source, "seal_invalid_identity")
 			continue
 		}
 		runSource := g.alias("seal_run", filepath.Clean(repo)+"\x00"+run.TaskID+"\x00"+run.RunID, repo)
+		// Evidence is immutable for this repository/Task/Run identity. Check
+		// before time filtering so a replacement cannot hide the conflict by
+		// changing its timestamp. Completion updates with the same digest may
+		// still produce an ordinary revision below.
+		previousDigest, seen := g.seenSealDigests[runSource]
+		if old, ok := g.latest[runSource]; ok {
+			previousDigest, seen = old.EvidenceSHA256, true
+		}
+		if seen && previousDigest != run.EvidenceSHA256 {
+			g.issue(runSource, "seal_evidence_conflict")
+			continue
+		}
+		g.seenSealDigests[runSource] = run.EvidenceSHA256
 		// The executable reading saved Evidence is not its producer. Current
 		// Evidence has no producer version; exporter upgrades must not revise
 		// historical events or create execution-version cohorts.
@@ -922,15 +937,38 @@ func (g *gatherer) collectSeal(repo string) {
 // a fabricated failure, success, or zero-second measurement.
 func validSealShape(data []byte) bool {
 	var top map[string]json.RawMessage
-	if json.Unmarshal(data, &top) != nil || !requiredJSON(top, "schema", "exporter_version", "scan_complete", "runs", "issues") {
+	if json.Unmarshal(data, &top) != nil || len(top) != 6 || !requiredJSON(top, "schema", "exporter_version", "scan_complete", "tasks", "runs", "issues") {
 		return false
+	}
+	var tasks []map[string]json.RawMessage
+	if json.Unmarshal(top["tasks"], &tasks) != nil {
+		return false
+	}
+	for _, task := range tasks {
+		if len(task) != 1 || !requiredJSON(task, "task_id") {
+			return false
+		}
+	}
+	var issues []map[string]json.RawMessage
+	if json.Unmarshal(top["issues"], &issues) != nil {
+		return false
+	}
+	for _, issue := range issues {
+		if len(issue) != 3 || !requiredJSON(issue, "code") {
+			return false
+		}
+		for _, key := range []string{"task_id", "run_id"} {
+			if _, ok := issue[key]; !ok {
+				return false
+			}
+		}
 	}
 	var runs []map[string]json.RawMessage
 	if json.Unmarshal(top["runs"], &runs) != nil {
 		return false
 	}
 	for _, run := range runs {
-		if !requiredJSON(run, "task_id", "run_id", "evidence_sha256", "mechanical_result", "required_checks_pass", "scope_pass", "source_stable_during_checks", "scope_violation_count", "checks", "completion_record") {
+		if len(run) != 12 || !requiredJSON(run, "task_id", "run_id", "evidence_sha256", "mechanical_result", "required_checks_pass", "scope_pass", "source_stable_during_checks", "scope_violation_count", "checks", "completion_record") {
 			return false
 		}
 		for _, key := range []string{"timestamp", "run_version"} {
@@ -943,7 +981,7 @@ func validSealShape(data []byte) bool {
 			return false
 		}
 		for _, check := range checks {
-			if !requiredJSON(check, "index", "required", "passed", "timed_out") {
+			if len(check) != 6 || !requiredJSON(check, "index", "required", "passed", "timed_out") {
 				return false
 			}
 			for _, key := range []string{"exit_code", "duration_seconds"} {
@@ -953,7 +991,7 @@ func validSealShape(data []byte) bool {
 			}
 		}
 		var completion map[string]json.RawMessage
-		if json.Unmarshal(run["completion_record"], &completion) != nil || !requiredJSON(completion, "state") {
+		if json.Unmarshal(run["completion_record"], &completion) != nil || len(completion) != 2 || !requiredJSON(completion, "state") {
 			return false
 		}
 		if _, ok := completion["completed_at"]; !ok {
