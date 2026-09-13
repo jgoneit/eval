@@ -45,6 +45,38 @@ jobs:
           cache: true
       - run: go test -race ./...
 
+  seal-integration:
+    name: pinned Seal export and Eval CLI integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: jgoneit/seal
+          ref: 11f6a304064be475fec75fe815bdcce85ae8a973
+          path: .seal-integration-source
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            .seal-integration-source/go.sum
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build actual Eval and pinned Seal executables
+        shell: bash
+        run: |
+          go build -o "$RUNNER_TEMP/evalctl" ./cmd/evalctl
+          cd .seal-integration-source
+          test "$(git rev-parse HEAD)" = 11f6a304064be475fec75fe815bdcce85ae8a973
+          go build -o "$RUNNER_TEMP/seal" ./cmd/seal
+      - name: Verify export, persistence, Completion and conflict boundaries
+        run: python3 tools/seal-integration/run.py --seal "$RUNNER_TEMP/seal" --evalctl "$RUNNER_TEMP/evalctl"
+
   pilot:
     name: offline pilot contracts and fixed cases
     runs-on: ubuntu-latest
