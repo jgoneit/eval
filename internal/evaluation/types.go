@@ -45,12 +45,12 @@ type Task struct {
 }
 
 type SealCheck struct {
-	Index           int      `json:"index"`
-	Required        bool     `json:"required"`
-	Passed          bool     `json:"passed"`
-	TimedOut        bool     `json:"timed_out"`
-	ExitCode        *int     `json:"exit_code"`
-	DurationSeconds *float64 `json:"duration_seconds"`
+	Index           int           `json:"index"`
+	Required        bool          `json:"required"`
+	Passed          bool          `json:"passed"`
+	TimedOut        bool          `json:"timed_out"`
+	ExitCode        *SealExitCode `json:"exit_code"`
+	DurationSeconds *float64      `json:"duration_seconds"`
 }
 
 type Completion struct {

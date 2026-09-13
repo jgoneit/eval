@@ -191,7 +191,7 @@ func TestGatherRejectsSymlinkAndPartialLine(t *testing.T) {
 	}
 }
 func sealFixture() map[string]any {
-	return map[string]any{"schema": "seal-run-export/v1", "exporter_version": "0.3.0-rc.4", "scan_complete": true, "issues": []any{}, "runs": []any{map[string]any{"task_id": "private-task", "run_id": "private-run", "run_version": nil, "evidence_sha256": strings.Repeat("a", 64), "timestamp": "2026-09-11T01:00:00Z", "mechanical_result": "pass", "required_checks_pass": true, "scope_pass": true, "source_stable_during_checks": true, "scope_violation_count": 0, "checks": []any{map[string]any{"index": 0, "required": true, "passed": true, "timed_out": false, "exit_code": 0, "duration_seconds": 1.5}}, "completion_record": map[string]any{"state": "absent", "completed_at": nil}}}}
+	return map[string]any{"schema": "seal-run-export/v1", "exporter_version": "0.3.0-rc.4", "scan_complete": true, "tasks": []any{map[string]any{"task_id": "private-task"}}, "issues": []any{}, "runs": []any{map[string]any{"task_id": "private-task", "run_id": "private-run", "run_version": nil, "evidence_sha256": strings.Repeat("a", 64), "timestamp": "2026-09-11T01:00:00Z", "mechanical_result": "pass", "required_checks_pass": true, "scope_pass": true, "source_stable_during_checks": true, "scope_violation_count": 0, "checks": []any{map[string]any{"index": 0, "required": true, "passed": true, "timed_out": false, "exit_code": 0, "duration_seconds": 1.5}}, "completion_record": map[string]any{"state": "absent", "completed_at": nil}}}}
 }
 func prepareSeal(t *testing.T, snap *Snapshot, repo string) string {
 	t.Helper()
@@ -239,6 +239,228 @@ func TestGatherSealCompletionRevisionAndBoundaries(t *testing.T) {
 	_, events, _, r = Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(4*time.Hour))
 	if !r.Complete || len(events) != 1 || events[0].Revision != 2 || events[0].SourceID != first.SourceID || events[0].ID == first.ID || events[0].Fingerprint == first.Fingerprint {
 		t.Fatal(events, r)
+	}
+	if events[0].EvidenceSHA256 != first.EvidenceSHA256 || events[0].Seal.CompletionRecord.State != "recorded_pass" {
+		t.Fatal("Completion did not preserve the underlying Evidence", events)
+	}
+	snap = applyGather(snap, nil, events, nil, r)
+	_, events, _, r = Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(5*time.Hour))
+	if !r.Complete || len(events) != 0 || r.Duplicates != 1 || len(snap.Events) != 2 {
+		t.Fatal("unchanged Completion inflated history", events, r)
+	}
+}
+
+func TestGatherSealEvidenceReplacementRetainsFailure(t *testing.T) {
+	for _, replacementTime := range []any{"2026-09-11T01:00:00Z", "2026-09-10T23:00:00Z", "2026-09-12T01:00:00Z", nil} {
+		t.Run(fmt.Sprint(replacementTime), func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			fixture := sealFixture()
+			run := fixture["runs"].([]any)[0].(map[string]any)
+			check := run["checks"].([]any)[0].(map[string]any)
+			run["mechanical_result"], run["required_checks_pass"] = "fail", false
+			check["passed"], check["exit_code"] = false, 1
+			writeJSON(t, file, fixture)
+			now := snap.Experiment.StartedAt.Add(2 * time.Hour)
+			tasks, events, bindings, receipt := Gather(context.Background(), snap, now)
+			if !receipt.Complete || len(events) != 1 {
+				t.Fatal(events, receipt)
+			}
+			first := events[0]
+			snap = applyGather(snap, tasks, events, bindings, receipt)
+			run["evidence_sha256"], run["timestamp"] = strings.Repeat("b", 64), replacementTime
+			run["mechanical_result"], run["required_checks_pass"] = "pass", true
+			check["passed"], check["exit_code"] = true, 0
+			writeJSON(t, file, fixture)
+			for i := 1; i <= 2; i++ {
+				tasks, events, bindings, receipt = Gather(context.Background(), snap, now.Add(time.Duration(i)*time.Hour))
+				if receipt.Complete || len(events) != 0 || receipt.Duplicates != 0 || !hasIssue(receipt, "seal_evidence_conflict") {
+					t.Fatal("changed Evidence replaced a failed Run", events, receipt)
+				}
+				for _, issue := range receipt.Issues {
+					if issue.Code == "seal_evidence_conflict" && issue.SourceID != first.SourceID {
+						t.Fatal("conflict lost exact Run correlation", issue)
+					}
+				}
+				snap = applyGather(snap, tasks, events, bindings, receipt)
+				latest := latestEvents(snap)[first.SourceID]
+				report := BuildReport(snap)
+				if len(snap.Events) != 1 || latest.ID != first.ID || latest.Fingerprint != first.Fingerprint || latest.EvidenceSHA256 != first.EvidenceSHA256 || latest.Outcome != "fail" || report.Counts.SourceUpdates != 0 || report.Observed.SealMechanicalResults["fail"] != 1 || report.Observed.SealMechanicalResults["pass"] != 0 {
+					t.Fatal("conflict changed saved history or reported result", latest, report)
+				}
+				requirePrivate(t, events, receipt, report)
+			}
+		})
+	}
+}
+
+func TestGatherSealEvidenceConflictWithinExport(t *testing.T) {
+	for _, historicalIndex := range []int{-1, 0, 1} {
+		t.Run(fmt.Sprint(historicalIndex), func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			fixture := sealFixture()
+			replacement := sealFixture()["runs"].([]any)[0].(map[string]any)
+			replacement["evidence_sha256"] = strings.Repeat("b", 64)
+			runs := append(fixture["runs"].([]any), replacement)
+			wantEvents := 1
+			if historicalIndex >= 0 {
+				runs[historicalIndex].(map[string]any)["timestamp"] = "2026-09-10T23:00:00Z"
+				if historicalIndex == 0 {
+					wantEvents = 0
+				}
+			}
+			fixture["runs"] = runs
+			writeJSON(t, file, fixture)
+			_, events, _, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+			if receipt.Complete || len(events) != wantEvents || !hasIssue(receipt, "seal_evidence_conflict") {
+				t.Fatal("conflicting export passed after time filtering", events, receipt)
+			}
+			if len(events) > 0 && (events[0].Revision != 1 || events[0].EvidenceSHA256 != strings.Repeat("a", 64)) {
+				t.Fatal("conflicting export replaced its first Evidence", events)
+			}
+		})
+	}
+}
+
+func TestGatherSealRequiresTaskInventoryShape(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		tasks   any
+		omitted bool
+	}{
+		{name: "missing", omitted: true},
+		{name: "null"},
+		{name: "object", tasks: map[string]any{}},
+		{name: "null task", tasks: []any{nil}},
+		{name: "missing identity", tasks: []any{map[string]any{}}},
+		{name: "null identity", tasks: []any{map[string]any{"task_id": nil}}},
+		{name: "numeric identity", tasks: []any{map[string]any{"task_id": 123}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			fixture := sealFixture()
+			fixture["tasks"] = tc.tasks
+			if tc.omitted {
+				delete(fixture, "tasks")
+			}
+			writeJSON(t, file, fixture)
+			_, events, _, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+			if receipt.Complete || len(events) != 0 || !hasIssue(receipt, "seal_export_invalid") {
+				t.Fatal("malformed Task inventory accepted", events, receipt)
+			}
+		})
+	}
+}
+
+func TestGatherSealEmptyTaskInventoryAndTasksWithoutRuns(t *testing.T) {
+	for _, count := range []int{0, 1} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			fixture := sealFixture()
+			fixture["runs"] = []any{}
+			if count == 0 {
+				fixture["tasks"] = []any{}
+			}
+			writeJSON(t, file, fixture)
+			_, events, bindings, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+			if !receipt.Complete || len(events) != 0 {
+				t.Fatal(events, receipt)
+			}
+			taskBindings := 0
+			for _, binding := range bindings {
+				if binding.Kind == "seal_task" {
+					taskBindings++
+				}
+			}
+			if taskBindings != count {
+				t.Fatal("Task inventory was lost", bindings)
+			}
+		})
+	}
+}
+
+func TestGatherSealRequiresExactEnvelopeAndIssueFields(t *testing.T) {
+	for _, field := range []string{"Tasks", "code", "task_id", "run_id"} {
+		t.Run(field, func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			fixture := sealFixture()
+			if field == "Tasks" {
+				fixture[field] = []any{}
+			} else {
+				issue := map[string]any{"code": "invalid_metric", "task_id": nil, "run_id": nil}
+				delete(issue, field)
+				fixture["issues"] = []any{issue}
+			}
+			writeJSON(t, file, fixture)
+			_, events, _, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+			if receipt.Complete || len(events) != 0 || !hasIssue(receipt, "seal_export_invalid") {
+				t.Fatal("malformed export field accepted", events, receipt)
+			}
+		})
+	}
+}
+
+func TestGatherSealUsesSealIdentityContract(t *testing.T) {
+	for _, identity := range []string{"private-task_1", strings.Repeat("a", 161), "private.task", "private:task"} {
+		t.Run(identity, func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			fixture := sealFixture()
+			fixture["tasks"].([]any)[0].(map[string]any)["task_id"] = identity
+			run := fixture["runs"].([]any)[0].(map[string]any)
+			run["task_id"], run["run_id"] = identity, identity
+			writeJSON(t, file, fixture)
+			_, events, bindings, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+			valid := !strings.ContainsAny(identity, ".:")
+			wantEvents := 0
+			if valid {
+				wantEvents = 1
+			}
+			if receipt.Complete != valid || hasIssue(receipt, "seal_invalid_identity") == valid || len(events) != wantEvents {
+				t.Fatal("Seal identity contract mismatch", events, receipt)
+			}
+			for _, binding := range bindings {
+				if !valid && (binding.Kind == "seal_task" || binding.Kind == "seal_run") {
+					t.Fatal("invalid identity created a private binding", binding)
+				}
+			}
+			requirePrivate(t, events, receipt)
+		})
+	}
+}
+
+func TestGatherSealRejectsNestedCaseAliases(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		original string
+		alias    string
+	}{
+		{name: "Run", original: `"mechanical_result":"pass"`, alias: `"MECHANICAL_RESULT":"fail"`},
+		{name: "check", original: `"passed":true`, alias: `"PASSED":false`},
+		{name: "Completion", original: `"state":"absent"`, alias: `"STATE":"invalid"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snap, repo, _, _ := gatherFixture(t)
+			file := prepareSeal(t, &snap, repo)
+			data, err := json.Marshal(sealFixture())
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Place the alias last so encoding/json would otherwise overwrite
+			// the exact contract field with the case-insensitive alias value.
+			data = []byte(strings.Replace(string(data), tc.original, tc.original+","+tc.alias, 1))
+			if err := os.WriteFile(file, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, events, _, receipt := Gather(context.Background(), snap, snap.Experiment.StartedAt.Add(2*time.Hour))
+			if receipt.Complete || len(events) != 0 || !hasIssue(receipt, "seal_export_invalid") {
+				t.Fatal("case alias changed exported facts", events, receipt)
+			}
+		})
 	}
 }
 

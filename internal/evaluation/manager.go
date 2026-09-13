@@ -37,6 +37,9 @@ func DecodeStrict(data []byte, target any) error {
 		return ErrFull
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
+	// This pass checks structure only. Converting numeric tokens to float64
+	// would reject valid arbitrary-precision historical Seal exit codes.
+	d.UseNumber()
 	var walk func() error
 	walk = func() error {
 		tok, err := d.Token()
