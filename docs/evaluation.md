@@ -30,6 +30,13 @@ at registration; collection then reports them as incomplete, rather than
 claiming that an empty result means success. A missing `.seal` in an accessible
 repository is an unused source, not an installation failure.
 
+The integration test pins Seal source commit
+`11f6a304064be475fec75fe815bdcce85ae8a973`. Its `seal-run-export/v1`
+response, rather than the version string alone, establishes exporter support:
+the older published `v0.3.0-rc.4` binary has no export command even though this
+source build still reports that version. Changing a configured collector binary
+is a separate deployment step; repository tests do not replace it automatically.
+
 ```sh
 evalctl experiment init --config /absolute/private/config.json
 evalctl collect --experiment EXPERIMENT_UUID
@@ -68,8 +75,24 @@ Seal is invoked directly with an argument array, in the exact repository, with
 bounded output and timeout. Eval never opens internal Evidence. The export
 projects validated IDs, digest, mechanical results, scope/source stability,
 check times and historical Completion presence. A later Completion appends an
-event revision even when Evidence digest stays unchanged. It does not turn a
+event revision when Evidence digest stays unchanged. It does not turn a
 historical Run into a new postactivation invocation or current Acceptance.
+An Evidence digest change under the same repository, Task and Run identity is
+`seal_evidence_conflict`: collection is incomplete and the replacement does not
+revise the previously collected event history. This check precedes timestamp
+filtering, so changing the replacement's timestamp cannot conceal a conflict
+with a saved Run.
+Repeated conflicting exports remain incomplete until the source is resolved;
+Eval never repairs Evidence or replaces its previous observation.
+
+The export envelope requires all six fields, including a non-null `tasks` array
+(`[]` when empty). Missing or malformed envelope fields are
+`seal_export_invalid`, not a successful empty source. Valid partial exports keep
+their usable Runs and report the scan issues. Historical integer exit codes
+retain their exact numeric value through collection, JSON storage and re-reading,
+including values beyond 64-bit and floating-point range. Unknown exit codes stay
+`null`; strings, fractions and exponent forms are rejected as non-integer tokens.
+
 Completion state and timestamp must form a consistent pair before activation
 time filtering: absent Completion has no timestamp, and present Completion has
 a valid timestamp. Contradictory exported metadata is an incomplete source,
@@ -182,6 +205,16 @@ a human-reviewed real case or an actual scheduled run. Activation evidence must
 state these gates separately. Rollback disables the heartbeat and uses the
 previous executable; retain this experiment's private directory for analysis.
 The legacy recorder and old journals are unaffected.
+
+The [pinned Seal CLI integration test](../tools/seal-integration/README.md) builds
+both executables and exercises these collection boundaries in disposable private
+state. Its historical integer fixtures are explicitly fabricated compatibility
+cases, not real process exit statuses or production task-quality evidence.
+
+Older Eval executables using machine integers cannot reopen an experiment after
+it stores an exit code outside their integer range. Retain the updated executable
+for reading that experiment if collector deployment is rolled back; do not alter
+or truncate its saved numeric values to make an older reader accept them.
 
 Receipt issue arrays contain distinct source/code pairs, not a count of every
 malformed input row. Failed precommit collection attempts are not journal receipts;
